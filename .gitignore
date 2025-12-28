@@ -25,3 +25,14 @@ build/
 .env
 .env.local
 
+# Flask
+instance/
+.webassets-cache
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
