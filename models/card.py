@@ -1,14 +1,15 @@
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Union
+from .content import CardContent, ContentType
 
 
 class Card:
     """Represents a flashcard in the Leitner box system"""
-    
+
     def __init__(
         self,
-        front: str,
-        back: str,
+        front: Union[str, CardContent],
+        back: Union[str, CardContent],
         card_id: Optional[int] = None,
         box: int = 1,
         created_at: Optional[str] = None,
@@ -16,8 +17,9 @@ class Card:
         review_count: int = 0
     ):
         self.id = card_id
-        self.front = front
-        self.back = back
+        # Convert strings to CardContent objects for backward compatibility
+        self.front = front if isinstance(front, CardContent) else CardContent.text(front)
+        self.back = back if isinstance(back, CardContent) else CardContent.text(back)
         self.box = box
         self.created_at = created_at or datetime.now().isoformat()
         self.last_reviewed = last_reviewed
@@ -27,8 +29,8 @@ class Card:
         """Convert card to dictionary representation"""
         return {
             'id': self.id,
-            'front': self.front,
-            'back': self.back,
+            'front': self.front.to_dict(),
+            'back': self.back.to_dict(),
             'box': self.box,
             'created_at': self.created_at,
             'last_reviewed': self.last_reviewed,
@@ -38,10 +40,17 @@ class Card:
     @classmethod
     def from_dict(cls, data: dict) -> 'Card':
         """Create a Card instance from a dictionary"""
+        # Handle both old format (string) and new format (dict with type)
+        front_data = data['front']
+        back_data = data['back']
+
+        front = CardContent.from_dict(front_data) if isinstance(front_data, dict) else CardContent.text(front_data)
+        back = CardContent.from_dict(back_data) if isinstance(back_data, dict) else CardContent.text(back_data)
+
         return cls(
             card_id=data.get('id'),
-            front=data['front'],
-            back=data['back'],
+            front=front,
+            back=back,
             box=data.get('box', 1),
             created_at=data.get('created_at'),
             last_reviewed=data.get('last_reviewed'),
@@ -72,13 +81,18 @@ class Card:
         
         return self.box
     
-    def update(self, front: Optional[str] = None, back: Optional[str] = None):
+    def update(
+        self,
+        front: Optional[Union[str, CardContent]] = None,
+        back: Optional[Union[str, CardContent]] = None
+    ):
         """Update card content"""
         if front is not None:
-            self.front = front
+            self.front = front if isinstance(front, CardContent) else CardContent.text(front)
         if back is not None:
-            self.back = back
+            self.back = back if isinstance(back, CardContent) else CardContent.text(back)
     
     def __repr__(self) -> str:
-        return f"Card(id={self.id}, front='{self.front[:20]}...', box={self.box})"
+        front_preview = str(self.front)[:40] + '...' if len(str(self.front)) > 40 else str(self.front)
+        return f"Card(id={self.id}, front={front_preview}, box={self.box})"
 

@@ -1,5 +1,5 @@
 from flask import Flask, jsonify, request
-from models import Card
+from models import Card, CardContent, ContentType
 
 app = Flask(__name__)
 
@@ -38,9 +38,23 @@ def manage_cards():
         if not data or 'front' not in data or 'back' not in data:
             return jsonify({'error': 'Front and back are required'}), 400
 
+        # Parse front content
+        front_data = data['front']
+        if isinstance(front_data, dict):
+            front = CardContent.from_dict(front_data)
+        else:
+            front = CardContent.text(front_data)
+
+        # Parse back content
+        back_data = data['back']
+        if isinstance(back_data, dict):
+            back = CardContent.from_dict(back_data)
+        else:
+            back = CardContent.text(back_data)
+
         card = Card(
-            front=data['front'],
-            back=data['back'],
+            front=front,
+            back=back,
             card_id=next_card_id
         )
 
@@ -64,10 +78,26 @@ def card_detail(card_id):
 
     elif request.method == 'PUT':
         data = request.get_json()
-        card.update(
-            front=data.get('front'),
-            back=data.get('back')
-        )
+
+        # Parse front content if provided
+        front = None
+        if 'front' in data:
+            front_data = data['front']
+            if isinstance(front_data, dict):
+                front = CardContent.from_dict(front_data)
+            else:
+                front = CardContent.text(front_data)
+
+        # Parse back content if provided
+        back = None
+        if 'back' in data:
+            back_data = data['back']
+            if isinstance(back_data, dict):
+                back = CardContent.from_dict(back_data)
+            else:
+                back = CardContent.text(back_data)
+
+        card.update(front=front, back=back)
         return jsonify({'message': 'Card updated', 'card': card.to_dict()})
 
     elif request.method == 'DELETE':
