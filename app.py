@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, render_template
 from models import Card, CardContent, ContentType
 
 app = Flask(__name__)
@@ -11,7 +11,13 @@ next_card_id = 1  # Counter for card IDs
 
 @app.route('/')
 def home():
-    """Home endpoint"""
+    """Home page - Card creation UI"""
+    return render_template('index.html')
+
+
+@app.route('/api')
+def api_info():
+    """API information endpoint"""
     return jsonify({
         'message': 'Welcome to MemoryVault - Leitner Box System',
         'version': '0.1.0',

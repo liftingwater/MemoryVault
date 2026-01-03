@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MemoryVault - Create Cards</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🧠 MemoryVault</h1>
+            <p class="subtitle">Leitner Box System - Create Your Flashcards</p>
+        </header>
+
+        <div class="main-content">
+            <!-- Card Creation Form -->
+            <div class="form-section">
+                <h2>Create New Card</h2>
+                
+                <!-- Front Side -->
+                <div class="card-side">
+                    <h3>Front Side</h3>
+                    <div class="content-type-selector">
+                        <label>
+                            <input type="radio" name="front-type" value="text" checked>
+                            <span>📝 Text</span>
+                        </label>
+                        <label>
+                            <input type="radio" name="front-type" value="image">
+                            <span>🖼️ Image</span>
+                        </label>
+                    </div>
+                    
+                    <div class="content-input">
+                        <textarea 
+                            id="front-text" 
+                            class="text-input active" 
+                            placeholder="Enter the question or prompt..."
+                            rows="4"
+                        ></textarea>
+                        <input 
+                            id="front-image" 
+                            class="image-input" 
+                            type="text" 
+                            placeholder="Enter image URL..."
+                        >
+                        <input 
+                            id="front-alt" 
+                            class="alt-text-input" 
+                            type="text" 
+                            placeholder="Alt text (optional)..."
+                        >
+                    </div>
+                </div>
+
+                <!-- Back Side -->
+                <div class="card-side">
+                    <h3>Back Side</h3>
+                    <div class="content-type-selector">
+                        <label>
+                            <input type="radio" name="back-type" value="text" checked>
+                            <span>📝 Text</span>
+                        </label>
+                        <label>
+                            <input type="radio" name="back-type" value="image">
+                            <span>🖼️ Image</span>
+                        </label>
+                    </div>
+                    
+                    <div class="content-input">
+                        <textarea 
+                            id="back-text" 
+                            class="text-input active" 
+                            placeholder="Enter the answer..."
+                            rows="4"
+                        ></textarea>
+                        <input 
+                            id="back-image" 
+                            class="image-input" 
+                            type="text" 
+                            placeholder="Enter image URL..."
+                        >
+                        <input 
+                            id="back-alt" 
+                            class="alt-text-input" 
+                            type="text" 
+                            placeholder="Alt text (optional)..."
+                        >
+                    </div>
+                </div>
+
+                <div class="form-actions">
+                    <button id="create-btn" class="btn btn-primary">Create Card</button>
+                    <button id="clear-btn" class="btn btn-secondary">Clear</button>
+                </div>
+            </div>
+
+            <!-- Card Preview -->
+            <div class="preview-section">
+                <h2>Preview</h2>
+                <div class="card-preview">
+                    <div class="card" id="preview-card">
+                        <div class="card-face card-front active">
+                            <div class="card-label">Front</div>
+                            <div id="preview-front-content" class="card-content">
+                                <p class="placeholder">Your front content will appear here...</p>
+                            </div>
+                        </div>
+                        <div class="card-face card-back">
+                            <div class="card-label">Back</div>
+                            <div id="preview-back-content" class="card-content">
+                                <p class="placeholder">Your back content will appear here...</p>
+                            </div>
+                        </div>
+                    </div>
+                    <button id="flip-btn" class="btn btn-flip">Flip Card</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Success Message -->
+        <div id="success-message" class="message success hidden">
+            ✓ Card created successfully!
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
+
