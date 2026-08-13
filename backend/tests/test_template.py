@@ -1,0 +1,172 @@
+"""Validate the CloudFormation template structure without deploying to AWS."""
+from __future__ import annotations
+
+import pathlib
+from typing import Any, cast
+
+import pytest
+import yaml  # type: ignore[import-untyped]
+
+TEMPLATE_PATH = pathlib.Path(__file__).parents[2] / "template.yaml"
+
+# CloudFormation intrinsic-function tags that yaml.safe_load rejects.
+# Register them as plain scalars so the loader doesn't error.
+_CF_TAGS = [
+    "!Sub", "!Ref", "!GetAtt", "!If", "!Select", "!Split",
+    "!Join", "!And", "!Or", "!Not", "!Equals", "!Condition",
+    "!ImportValue", "!FindInMap", "!Base64", "!Cidr",
+]
+
+
+def _build_loader() -> Any:  # returns a yaml.Loader subclass
+    class CfnLoader(yaml.SafeLoader):  # type: ignore[misc]
+        pass
+
+    def _scalar(loader: Any, tag: Any, node: Any) -> Any:
+        return loader.construct_scalar(node)
+
+    for tag in _CF_TAGS:
+        CfnLoader.add_multi_constructor(tag, _scalar)
+
+    return CfnLoader
+
+REQUIRED_RESOURCE_TYPES = {
+    "AWS::S3::Bucket",
+    "AWS::CloudFront::Distribution",
+    "AWS::Lambda::Function",
+    "AWS::Lambda::LayerVersion",
+    "AWS::ApiGatewayV2::Api",
+    "AWS::IAM::Role",
+    "AWS::SecretsManager::Secret",
+    "AWS::Logs::LogGroup",
+}
+
+
+@pytest.fixture(scope="module")
+def template() -> dict[str, Any]:
+    loader = _build_loader()
+    return cast(dict[str, Any], yaml.load(TEMPLATE_PATH.read_text(), Loader=loader))
+
+
+@pytest.fixture(scope="module")
+def resources(template: dict[str, Any]) -> dict[str, Any]:
+    return cast(dict[str, Any], template["Resources"])
+
+
+def resource_types(resources: dict[str, Any]) -> set[str]:
+    return {r["Type"] for r in resources.values()}
+
+
+def resources_of_type(resources: dict[str, Any], rtype: str) -> list[dict[str, Any]]:
+    return [r for r in resources.values() if r["Type"] == rtype]
+
+
+def _as_action_list(action: Any) -> list[str]:
+    """Normalise a CloudFormation Action value to a list of strings."""
+    return [action] if isinstance(action, str) else list(action)
+
+
+# ── Slice 1: required resource types ────────────────────────────────────────
+
+
+def test_template_has_all_required_resource_types(
+    resources: dict[str, Any],
+) -> None:
+    present = resource_types(resources)
+    missing = REQUIRED_RESOURCE_TYPES - present
+    assert not missing, f"Missing resource types: {missing}"
+
+
+def test_template_has_two_s3_buckets(resources: dict[str, Any]) -> None:
+    buckets = resources_of_type(resources, "AWS::S3::Bucket")
+    assert len(buckets) >= 2, "Expected at least 2 S3 buckets (frontend + context)"
+
+
+# ── Slice 2: Lambda configuration ────────────────────────────────────────────
+
+
+def test_lambda_memory_is_256mb(resources: dict[str, Any]) -> None:
+    functions = resources_of_type(resources, "AWS::Lambda::Function")
+    assert functions, "No Lambda functions found"
+    fn = functions[0]["Properties"]
+    assert fn["MemorySize"] == 256, f"Expected 256MB, got {fn['MemorySize']}"
+
+
+def test_lambda_handler_is_mangum_entrypoint(resources: dict[str, Any]) -> None:
+    functions = resources_of_type(resources, "AWS::Lambda::Function")
+    fn = functions[0]["Properties"]
+    assert fn["Handler"] == "app.main.handler", (
+        f"Expected app.main.handler, got {fn['Handler']}"
+    )
+
+
+def test_lambda_runtime_is_python313(resources: dict[str, Any]) -> None:
+    functions = resources_of_type(resources, "AWS::Lambda::Function")
+    fn = functions[0]["Properties"]
+    assert fn["Runtime"] == "python3.13"
+
+
+# ── Slice 3: CloudWatch Log Group ─────────────────────────────────────────────
+
+
+def test_log_group_retention_is_30_days(resources: dict[str, Any]) -> None:
+    log_groups = resources_of_type(resources, "AWS::Logs::LogGroup")
+    assert log_groups, "No CloudWatch Log Groups found"
+    lg = log_groups[0]["Properties"]
+    assert lg["RetentionInDays"] == 30, (
+        f"Expected 30-day retention, got {lg['RetentionInDays']}"
+    )
+
+
+# ── Slice 4: API Gateway HTTP API v2 ──────────────────────────────────────────
+
+
+def test_api_gateway_is_http_protocol(resources: dict[str, Any]) -> None:
+    apis = resources_of_type(resources, "AWS::ApiGatewayV2::Api")
+    assert apis, "No ApiGatewayV2::Api found"
+    api = apis[0]["Properties"]
+    assert api["ProtocolType"] == "HTTP", (
+        f"Expected HTTP protocol (v2), got {api['ProtocolType']}"
+    )
+
+
+def test_api_gateway_has_default_stage_with_autodeploy(resources: dict[str, Any]) -> None:
+    stages = resources_of_type(resources, "AWS::ApiGatewayV2::Stage")
+    assert stages, "No ApiGatewayV2::Stage found"
+    stage = stages[0]["Properties"]
+    assert stage["AutoDeploy"] is True
+
+
+# ── Slice 5: IAM role permissions ─────────────────────────────────────────────
+
+
+def _iam_policy_statements(resources: dict[str, Any]) -> list[dict[str, Any]]:
+    roles = resources_of_type(resources, "AWS::IAM::Role")
+    assert roles, "No IAM roles found"
+    stmts: list[dict[str, Any]] = []
+    for policy in roles[0]["Properties"].get("Policies", []):
+        stmts.extend(policy["PolicyDocument"]["Statement"])
+    return stmts
+
+
+def test_iam_role_allows_bedrock_invoke_model(resources: dict[str, Any]) -> None:
+    stmts = _iam_policy_statements(resources)
+    matches = [s for s in stmts if "bedrock:InvokeModel" in _as_action_list(s["Action"])]
+    assert matches, "No IAM statement grants bedrock:InvokeModel"
+
+
+def test_iam_role_allows_s3_context_access(resources: dict[str, Any]) -> None:
+    required = {"s3:GetObject", "s3:PutObject", "s3:DeleteObject"}
+    covered: set[str] = set()
+    for stmt in _iam_policy_statements(resources):
+        covered |= required & set(_as_action_list(stmt["Action"]))
+    assert covered == required, f"Missing S3 actions: {required - covered}"
+
+
+def test_iam_role_allows_secrets_manager_read(resources: dict[str, Any]) -> None:
+    stmts = _iam_policy_statements(resources)
+    matches = [
+        s for s in stmts
+        if "secretsmanager:GetSecretValue" in _as_action_list(s["Action"])
+    ]
+    assert matches, "No IAM statement grants secretsmanager:GetSecretValue"

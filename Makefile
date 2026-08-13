@@ -1,12 +1,16 @@
 PYTHON_VERSION ?= 3.13
 BACKEND_PORT ?= 8000
 FRONTEND_PORT ?= 5173
+STACK_NAME ?= memoryvault
+AWS_REGION ?= us-east-1
+# ARTIFACTS_BUCKET must be set externally: make bootstrap creates it once.
 
 .PHONY: install install-backend install-frontend \
 	dev dev-backend dev-frontend \
 	test test-backend test-frontend \
 	typecheck typecheck-backend typecheck-frontend \
-	build clean
+	build clean \
+	bootstrap deploy
 
 install: install-backend install-frontend
 
@@ -44,6 +48,28 @@ typecheck-frontend:
 
 build:
 	cd frontend && npm run build
+
+# ── AWS deployment ────────────────────────────────────────────────────────────
+
+bootstrap:
+	@if [ -z "$(ARTIFACTS_BUCKET)" ]; then \
+		echo "Error: set ARTIFACTS_BUCKET=<name> before running bootstrap" >&2; exit 1; \
+	fi
+	aws s3api create-bucket \
+		--bucket $(ARTIFACTS_BUCKET) \
+		--region $(AWS_REGION) \
+		$(if $(filter-out us-east-1,$(AWS_REGION)),--create-bucket-configuration LocationConstraint=$(AWS_REGION),)
+	aws s3api put-bucket-versioning \
+		--bucket $(ARTIFACTS_BUCKET) \
+		--versioning-configuration Status=Enabled
+	@echo "Artifacts bucket '$(ARTIFACTS_BUCKET)' ready."
+
+deploy:
+	@if [ -z "$(ARTIFACTS_BUCKET)" ]; then \
+		echo "Error: set ARTIFACTS_BUCKET=<name> (run 'make bootstrap' first)" >&2; exit 1; \
+	fi
+	STACK_NAME=$(STACK_NAME) AWS_REGION=$(AWS_REGION) ARTIFACTS_BUCKET=$(ARTIFACTS_BUCKET) \
+		./scripts/deploy.sh
 
 clean:
 	rm -rf backend/.venv backend/.pytest_cache backend/.mypy_cache
