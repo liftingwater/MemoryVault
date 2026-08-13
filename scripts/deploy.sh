@@ -66,6 +66,7 @@ aws cloudformation deploy \
     LambdaCodeKey="${LAMBDA_CODE_KEY}" \
     LambdaLayerKey="${LAMBDA_LAYER_KEY}" \
   --no-fail-on-empty-changeset
+# AllowedOrigins defaults to * on first deploy — tightened in step 4b below.
 
 # ── 4. Fetch stack outputs ──────────────────────────────────────────────────
 echo "--- Fetching stack outputs..."
@@ -86,6 +87,34 @@ import json, sys
 outputs = json.load(sys.stdin)
 print(next(o['OutputValue'] for o in outputs if o['OutputKey'] == 'DistributionUrl'))
 ")
+
+FUNCTION_NAME="${STACK_NAME}-api"
+
+# ── 4b. Lock down ALLOWED_ORIGINS to the CloudFront URL ─────────────────────
+# The template deploys with AllowedOrigins=* to avoid a circular dependency.
+# Now that the stack is up and we have the CloudFront URL, update the Lambda
+# environment variable directly so the FastAPI CORS middleware is locked down.
+echo "--- Updating Lambda ALLOWED_ORIGINS → ${DISTRIBUTION_URL}..."
+CURRENT_ENV=$(aws lambda get-function-configuration \
+  --region "${AWS_REGION}" \
+  --function-name "${FUNCTION_NAME}" \
+  --query "Environment.Variables" \
+  --output json)
+
+UPDATED_ENV=$(echo "${CURRENT_ENV}" | python3 -c "
+import json, sys
+env = json.load(sys.stdin)
+env['ALLOWED_ORIGINS'] = '${DISTRIBUTION_URL}'
+print(json.dumps(env))
+")
+
+aws lambda update-function-configuration \
+  --region "${AWS_REGION}" \
+  --function-name "${FUNCTION_NAME}" \
+  --environment "Variables=${UPDATED_ENV}" \
+  --query "LastUpdateStatus" \
+  --output text
+echo "    ALLOWED_ORIGINS locked to ${DISTRIBUTION_URL}"
 
 # ── 5. Build and upload SvelteKit frontend ──────────────────────────────────
 echo "--- Building SvelteKit frontend..."
