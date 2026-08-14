@@ -106,6 +106,22 @@ def test_lambda_runtime_is_python313(resources: dict[str, Any]) -> None:
     assert fn["Runtime"] == "python3.13"
 
 
+def test_lambda_architecture_is_x86_64(resources: dict[str, Any]) -> None:
+    # Architecture must be explicit and match the layer. Without this, Lambda
+    # defaults to x86_64 but the layer could silently mismatch, causing
+    # ImportModuleError for compiled extensions like pydantic_core.
+    functions = resources_of_type(resources, "AWS::Lambda::Function")
+    fn = functions[0]["Properties"]
+    assert fn.get("Architectures") == ["x86_64"]
+
+
+def test_layer_compatible_architecture_is_x86_64(resources: dict[str, Any]) -> None:
+    layers = resources_of_type(resources, "AWS::Lambda::LayerVersion")
+    assert layers, "No Lambda layer found"
+    layer = layers[0]["Properties"]
+    assert layer.get("CompatibleArchitectures") == ["x86_64"]
+
+
 # ── Slice 3: CloudWatch Log Group ─────────────────────────────────────────────
 
 

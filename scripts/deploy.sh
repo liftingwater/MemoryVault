@@ -34,7 +34,14 @@ trap 'rm -rf "$LAYER_BUILD_DIR"' EXIT
 pip install \
   --quiet \
   --target "${LAYER_BUILD_DIR}/python" \
-  --requirement "${ROOT_DIR}/backend/requirements.txt"
+  --requirement "${ROOT_DIR}/backend/requirements.txt" \
+  --platform manylinux2014_x86_64 \
+  --python-version "3.13" \
+  --implementation cp \
+  --only-binary=:all:
+# --platform / --only-binary: force Linux x86_64 wheels even when building on
+# macOS. Without this, pip downloads macOS binaries (e.g. pydantic_core's Rust
+# extension) that Lambda's Linux runtime cannot load.
 
 (cd "${LAYER_BUILD_DIR}" && zip -qr "${ROOT_DIR}/layer.zip" python/)
 
