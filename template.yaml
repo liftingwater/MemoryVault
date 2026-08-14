@@ -13,6 +13,14 @@ Parameters:
     Type: String
     Default: lambda/layer.zip
     Description: S3 key of the Lambda layer zip
+  AllowedOrigins:
+    Type: String
+    Default: "*"
+    Description: >
+      Comma-separated origins the FastAPI CORS middleware will accept.
+      Defaults to * for the initial deploy. The deploy script updates the
+      Lambda environment variable to the CloudFront URL after stack creation,
+      avoiding a circular dependency between ApiFunction and Distribution.
 
 Resources:
 
@@ -190,7 +198,7 @@ Resources:
         Variables:
           SUPABASE_SECRET_ARN: !Ref SupabaseSecret
           CONTEXT_BUCKET: !Ref ContextBucket
-          ALLOWED_ORIGINS: !Sub "https://${Distribution.DomainName}"
+          ALLOWED_ORIGINS: !Ref AllowedOrigins
 
   ApiInvokePermission:
     Type: AWS::Lambda::Permission
@@ -206,13 +214,9 @@ Resources:
     Properties:
       Name: !Sub "${AWS::StackName}-api"
       ProtocolType: HTTP
-      CorsConfiguration:
-        AllowOrigins:
-          - !Sub "https://${Distribution.DomainName}"
-        AllowMethods:
-          - "*"
-        AllowHeaders:
-          - "*"
+      # No CorsConfiguration here — all browser traffic reaches the API through
+      # CloudFront, never directly. CORS at the API Gateway level is dead code
+      # in this architecture and caused a circular dependency with Distribution.
 
   ApiIntegration:
     Type: AWS::ApiGatewayV2::Integration

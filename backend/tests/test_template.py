@@ -137,6 +137,31 @@ def test_api_gateway_has_default_stage_with_autodeploy(resources: dict[str, Any]
     assert stage["AutoDeploy"] is True
 
 
+def test_api_gateway_has_no_cors_configuration(resources: dict[str, Any]) -> None:
+    # CorsConfiguration on the Api would reference Distribution.DomainName,
+    # creating a circular dependency. CORS is handled by CloudFront instead.
+    apis = resources_of_type(resources, "AWS::ApiGatewayV2::Api")
+    api = apis[0]["Properties"]
+    assert "CorsConfiguration" not in api, (
+        "Api must not have CorsConfiguration — it creates a circular dependency "
+        "with Distribution. Handle CORS at the CloudFront layer instead."
+    )
+
+
+def test_lambda_allowed_origins_does_not_reference_distribution(
+    resources: dict[str, Any],
+) -> None:
+    # ALLOWED_ORIGINS must not use !Sub against Distribution.DomainName —
+    # that creates a circular dependency. It must be a plain parameter reference.
+    functions = resources_of_type(resources, "AWS::Lambda::Function")
+    env_vars = functions[0]["Properties"]["Environment"]["Variables"]
+    allowed = env_vars.get("ALLOWED_ORIGINS", "")
+    assert "Distribution" not in str(allowed), (
+        "ALLOWED_ORIGINS must not reference Distribution — use the AllowedOrigins "
+        "parameter instead and update the value post-deploy."
+    )
+
+
 # ── Slice 5: IAM role permissions ─────────────────────────────────────────────
 
 

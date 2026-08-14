@@ -2,6 +2,7 @@ GRILLING.md
 SPEC.md
 
 .scratch/*
+.scripts/setup*
 
 # Python
 __pycache__/
