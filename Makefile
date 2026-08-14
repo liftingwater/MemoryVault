@@ -5,6 +5,10 @@ STACK_NAME ?= memoryvault
 AWS_REGION ?= us-east-1
 # ARTIFACTS_BUCKET must be set externally: make bootstrap creates it once.
 
+# Auto-load .env if it exists. Command-line overrides still win.
+-include .env
+export
+
 .PHONY: install install-backend install-frontend \
 	dev dev-backend dev-frontend \
 	test test-backend test-frontend \
