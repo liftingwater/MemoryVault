@@ -101,19 +101,23 @@ CURRENT_ENV=$(aws lambda get-function-configuration \
   --query "Environment.Variables" \
   --output json)
 
-UPDATED_ENV=$(echo "${CURRENT_ENV}" | python3 -c "
+# Write the updated env to a temp file and use file:// to avoid shell-quoting
+# issues with embedded JSON double quotes in --environment Variables=<json>.
+TMP_ENV=$(mktemp)
+echo "${CURRENT_ENV}" | python3 -c "
 import json, sys
 env = json.load(sys.stdin)
 env['ALLOWED_ORIGINS'] = '${DISTRIBUTION_URL}'
-print(json.dumps(env))
-")
+print(json.dumps({'Variables': env}))
+" > "${TMP_ENV}"
 
 aws lambda update-function-configuration \
   --region "${AWS_REGION}" \
   --function-name "${FUNCTION_NAME}" \
-  --environment "Variables=${UPDATED_ENV}" \
+  --environment "file://${TMP_ENV}" \
   --query "LastUpdateStatus" \
   --output text
+rm -f "${TMP_ENV}"
 echo "    ALLOWED_ORIGINS locked to ${DISTRIBUTION_URL}"
 
 # ── 5. Build and upload SvelteKit frontend ──────────────────────────────────
