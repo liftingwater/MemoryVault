@@ -31,17 +31,13 @@ echo "--- Packaging Lambda layer..."
 LAYER_BUILD_DIR="$(mktemp -d)"
 trap 'rm -rf "$LAYER_BUILD_DIR"' EXIT
 
-# Install dependencies for Lambda's Linux environment
-# --platform: target Lambda's OS
-# --only-binary=:all:: only use pre-built wheels (no compiling)
-python3 -m pip install \
-  --quiet \
-  --target "${LAYER_BUILD_DIR}/python" \
-  --requirement "${ROOT_DIR}/backend/requirements.txt" \
-  --platform manylinux2014_x86_64 \
-  --implementation cp \
-  --python-version 3.13 \
-  --only-binary=:all:
+# Build layer inside Lambda-compatible Docker container
+# This ensures binary packages (psycopg, pydantic-core) are compiled for Amazon Linux
+docker run --rm \
+  -v "${ROOT_DIR}/backend/requirements.txt:/requirements.txt:ro" \
+  -v "${LAYER_BUILD_DIR}:/out" \
+  public.ecr.aws/lambda/python:3.13 \
+  bash -c "pip install -q -t /out/python -r /requirements.txt && chmod -R 755 /out"
 
 (cd "${LAYER_BUILD_DIR}" && zip -qr "${ROOT_DIR}/layer.zip" python/)
 
