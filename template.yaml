@@ -199,11 +199,9 @@ Resources:
           SUPABASE_SECRET_ARN: !Ref SupabaseSecret
           CONTEXT_BUCKET: !Ref ContextBucket
           ALLOWED_ORIGINS: !Ref AllowedOrigins
-          # Supabase credentials from SSM Parameter Store (stored by setup-supabase.sh)
+          # Supabase URL is non-sensitive, can be in env var
           SUPABASE_URL: "{{resolve:ssm:/memoryvault/supabase/url}}"
-          SUPABASE_SERVICE_ROLE_KEY: "{{resolve:ssm-secure:/memoryvault/supabase/service-role-key}}"
-          SUPABASE_JWT_SECRET: "{{resolve:ssm-secure:/memoryvault/supabase/jwt-secret}}"
-          SUPABASE_DB_URL: "{{resolve:secretsmanager:memoryvault/supabase-connection-string:SecretString}}"
+          # Secrets are loaded at runtime from Secrets Manager (see app/config.py)
 
   ApiInvokePermission:
     Type: AWS::Lambda::Permission

@@ -4,3 +4,4 @@ uvicorn[standard]==0.52.1
 fsrs==6.3.2
 PyJWT
 psycopg[binary]
+boto3
