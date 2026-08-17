@@ -148,11 +148,3 @@ echo "✓ Deploy complete"
 echo "  App URL:  ${DISTRIBUTION_URL}"
 echo "  Health:   ${DISTRIBUTION_URL}/health"
 echo ""
-echo "  Next: update the Supabase connection string in Secrets Manager:"
-SECRET_ARN=$(echo "${OUTPUTS}" | python3 -c "
-import json, sys
-outputs = json.load(sys.stdin)
-print(next(o['OutputValue'] for o in outputs if o['OutputKey'] == 'SupabaseSecretArn'))
-")
-echo "  aws secretsmanager put-secret-value --secret-id ${SECRET_ARN} \\"
-echo "    --secret-string '{\"connection_string\":\"YOUR_SUPABASE_URL\"}'"
