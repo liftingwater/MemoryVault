@@ -85,9 +85,13 @@ ask_secret() {
 
 write_env() {
   local key="$1" value="$2" tmp
+  # Single-quote the value so shell special characters (& $ ` \ etc.) are
+  # treated literally when the file is sourced. Escape any literal single
+  # quotes inside the value using the '"'"' idiom.
+  local escaped="${value//\'/\'\\\'\'}"
   touch "$ENV_FILE"; tmp=$(mktemp)
   grep -vE "^${key}=" "$ENV_FILE" > "$tmp" || true
-  printf '%s=%s\n' "$key" "$value" >> "$tmp"
+  printf "%s='%s'\n" "$key" "$escaped" >> "$tmp"
   mv "$tmp" "$ENV_FILE"
   WRITTEN_ENV+=("$key")
   printf '  %s✓ wrote%s %s → %s\n' "$GREEN" "$RESET" "$key" "$ENV_FILE"
