@@ -34,6 +34,7 @@ trap 'rm -rf "$LAYER_BUILD_DIR"' EXIT
 # Build layer inside Lambda-compatible Docker container
 # This ensures binary packages (psycopg, pydantic-core) are compiled for Amazon Linux
 docker run --rm \
+  --entrypoint "" \
   -v "${ROOT_DIR}/backend/requirements.txt:/requirements.txt:ro" \
   -v "${LAYER_BUILD_DIR}:/out" \
   public.ecr.aws/lambda/python:3.13 \
