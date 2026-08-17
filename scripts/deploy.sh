@@ -126,7 +126,8 @@ echo "    ALLOWED_ORIGINS locked to ${DISTRIBUTION_URL}"
 
 # ── 5. Build and upload SvelteKit frontend ──────────────────────────────────
 echo "--- Building SvelteKit frontend..."
-cd "${ROOT_DIR}/frontend" && npm run build
+# Inject the CloudFront URL as the API base URL at build time
+cd "${ROOT_DIR}/frontend" && VITE_API_BASE_URL="${DISTRIBUTION_URL}" npm run build
 
 echo "--- Uploading frontend to s3://${FRONTEND_BUCKET}..."
 aws s3 sync \
