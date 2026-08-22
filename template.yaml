@@ -175,7 +175,7 @@ Resources:
       CompatibleRuntimes:
         - python3.13
       CompatibleArchitectures:
-        - x86_64
+        - arm64
       Content:
         S3Bucket: !Ref ArtifactsBucket
         S3Key: !Ref LambdaLayerKey
@@ -187,11 +187,11 @@ Resources:
     Properties:
       FunctionName: !Sub "${AWS::StackName}-api"
       Runtime: python3.13
+      Architectures:
+        - arm64
       Handler: app.main.handler
       MemorySize: 256
       Timeout: 30
-      Architectures:
-        - x86_64
       Role: !GetAtt LambdaExecutionRole.Arn
       Layers:
         - !Ref DependenciesLayer
@@ -203,6 +203,9 @@ Resources:
           SUPABASE_SECRET_ARN: !Ref SupabaseSecret
           CONTEXT_BUCKET: !Ref ContextBucket
           ALLOWED_ORIGINS: !Ref AllowedOrigins
+          # Supabase URL is non-sensitive, can be in env var
+          SUPABASE_URL: "{{resolve:ssm:/memoryvault/supabase/url}}"
+          # Secrets are loaded at runtime from Secrets Manager (see app/config.py)
 
   ApiInvokePermission:
     Type: AWS::Lambda::Permission

@@ -31,17 +31,14 @@ echo "--- Packaging Lambda layer..."
 LAYER_BUILD_DIR="$(mktemp -d)"
 trap 'rm -rf "$LAYER_BUILD_DIR"' EXIT
 
-pip install \
-  --quiet \
-  --target "${LAYER_BUILD_DIR}/python" \
-  --requirement "${ROOT_DIR}/backend/requirements.txt" \
-  --platform manylinux2014_x86_64 \
-  --python-version "3.13" \
-  --implementation cp \
-  --only-binary=:all:
-# --platform / --only-binary: force Linux x86_64 wheels even when building on
-# macOS. Without this, pip downloads macOS binaries (e.g. pydantic_core's Rust
-# extension) that Lambda's Linux runtime cannot load.
+# Build layer inside Lambda-compatible Docker container
+# This ensures binary packages (psycopg, pydantic-core) are compiled for Amazon Linux
+docker run --rm \
+  --entrypoint "" \
+  -v "${ROOT_DIR}/backend/requirements.txt:/requirements.txt:ro" \
+  -v "${LAYER_BUILD_DIR}:/out" \
+  public.ecr.aws/lambda/python:3.13 \
+  bash -c "pip install -q -t /out/python -r /requirements.txt && chmod -R 755 /out"
 
 (cd "${LAYER_BUILD_DIR}" && zip -qr "${ROOT_DIR}/layer.zip" python/)
 
@@ -129,7 +126,8 @@ echo "    ALLOWED_ORIGINS locked to ${DISTRIBUTION_URL}"
 
 # ── 5. Build and upload SvelteKit frontend ──────────────────────────────────
 echo "--- Building SvelteKit frontend..."
-cd "${ROOT_DIR}/frontend" && npm run build
+# Inject the CloudFront URL as the API base URL at build time
+cd "${ROOT_DIR}/frontend" && VITE_API_BASE_URL="${DISTRIBUTION_URL}" npm run build
 
 echo "--- Uploading frontend to s3://${FRONTEND_BUCKET}..."
 aws s3 sync \
@@ -151,11 +149,3 @@ echo "✓ Deploy complete"
 echo "  App URL:  ${DISTRIBUTION_URL}"
 echo "  Health:   ${DISTRIBUTION_URL}/health"
 echo ""
-echo "  Next: update the Supabase connection string in Secrets Manager:"
-SECRET_ARN=$(echo "${OUTPUTS}" | python3 -c "
-import json, sys
-outputs = json.load(sys.stdin)
-print(next(o['OutputValue'] for o in outputs if o['OutputKey'] == 'SupabaseSecretArn'))
-")
-echo "  aws secretsmanager put-secret-value --secret-id ${SECRET_ARN} \\"
-echo "    --secret-string '{\"connection_string\":\"YOUR_SUPABASE_URL\"}'"

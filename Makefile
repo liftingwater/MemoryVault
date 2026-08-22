@@ -3,7 +3,7 @@ BACKEND_PORT ?= 8000
 FRONTEND_PORT ?= 5173
 STACK_NAME ?= memoryvault
 AWS_REGION ?= us-east-1
-# ARTIFACTS_BUCKET must be set externally: make bootstrap creates it once.
+ARTIFACTS_BUCKET ?= memoryvault-artifacts-iwritegoodcode
 
 # Auto-load .env if it exists. Command-line overrides still win.
 -include .env
