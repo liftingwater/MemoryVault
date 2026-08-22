@@ -1,6 +1,6 @@
 """Authentication module for Supabase JWT validation."""
 
-from typing import Any
+from typing import Any, Dict
 
 import jwt
 from fastapi import Depends, HTTPException, status
@@ -17,12 +17,12 @@ class AuthError(Exception):
     pass
 
 
-def decode_jwt(token: str) -> dict[str, Any]:
+def decode_jwt(token: str) -> Dict[str, Any]:
     """Decode and verify a Supabase JWT token."""
     try:
         # Decode the JWT using the SUPABASE_JWT_SECRET
         # Supabase tokens have audience "authenticated" for logged-in users
-        payload: dict[str, Any] = jwt.decode(
+        payload: Dict[str, Any] = jwt.decode(
             token,
             settings.supabase_jwt_secret,
             algorithms=["HS256"],
@@ -37,7 +37,7 @@ def decode_jwt(token: str) -> dict[str, Any]:
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-) -> dict[str, str | None]:
+) -> Dict[str, Any]:
     """
     Dependency to extract and validate the current user from JWT.
     Raises HTTPException with 401 if token is invalid or missing.

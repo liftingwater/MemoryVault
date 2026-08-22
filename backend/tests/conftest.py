@@ -1,4 +1,8 @@
 import os
+from typing import Any
+from unittest import mock
+import sys
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -19,9 +23,24 @@ def load_env_vars() -> None:
 
 load_env_vars()
 
-from app.main import app  # noqa: E402
+# Patch database before importing app
+from tests.test_database import mock_get_db, _reset_test_data  # noqa: E402
+import app.database  # noqa: E402
+app.database.get_db = mock_get_db
+
+from app.main import app as fastapi_app  # noqa: E402
 
 
 @pytest.fixture
 def client() -> TestClient:
-    return TestClient(app)
+    """Create a test client with mocked database."""
+    _reset_test_data()
+    return TestClient(fastapi_app)
+
+
+@pytest.fixture(autouse=True)
+def reset_test_data_fixture() -> Any:
+    """Reset test data before and after each test."""
+    _reset_test_data()
+    yield
+    _reset_test_data()

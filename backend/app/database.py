@@ -1,7 +1,7 @@
 """Database connection module for Supabase Postgres via Supavisor."""
 
 from contextlib import contextmanager
-from typing import Generator, Any
+from typing import Generator, Any, Optional
 
 import psycopg
 
