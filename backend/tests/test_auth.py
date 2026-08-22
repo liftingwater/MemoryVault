@@ -73,10 +73,11 @@ def test_auth_rejects_invalid_signature() -> None:
 # ── API endpoint auth tests ─────────────────────────────────────────────────
 
 
-def test_dashboard_returns_401_without_auth(client: TestClient) -> None:
-    """Test that /dashboard returns 401 when no auth header is provided."""
+def test_dashboard_returns_403_without_auth(client: TestClient) -> None:
+    """Test that /dashboard returns 403 when no auth header is provided."""
+    # HTTPBearer dependency returns 403 for missing credentials, not 401
     response = client.get("/dashboard")
-    assert response.status_code == 401
+    assert response.status_code == 403
 
 
 def test_dashboard_returns_401_with_invalid_token(client: TestClient) -> None:
