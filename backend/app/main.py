@@ -1,11 +1,17 @@
+from typing import Any, Dict
+
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from mangum import Mangum
 
 from app.auth import get_current_user
 from app.config import settings
+from app.routers import decks_router
 
 app = FastAPI(title="MemoryVault API")
+
+# Register routers
+app.include_router(decks_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -16,12 +22,12 @@ app.add_middleware(
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
+def health() -> Dict[str, str]:
     return {"status": "ok"}
 
 
 @app.get("/dashboard")
-async def dashboard(user: dict[str, str | None] = Depends(get_current_user)) -> dict[str, str | None]:
+async def dashboard(user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
     """Protected dashboard endpoint. Returns basic user info."""
     return {
         "message": "Welcome to MemoryVault",

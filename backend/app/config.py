@@ -2,12 +2,12 @@ import json
 import os
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Any
+from typing import Any, Dict, Tuple
 
 DEFAULT_ALLOWED_ORIGINS = "http://localhost:5173"
 
 
-def _get_secrets_from_aws() -> dict[str, Any]:
+def _get_secrets_from_aws() -> Dict[str, Any]:
     """Load Supabase secrets from AWS Secrets Manager (Lambda runtime only)."""
     secret_arn = os.environ.get("SUPABASE_SECRET_ARN")
     if not secret_arn:
@@ -24,7 +24,7 @@ def _get_secrets_from_aws() -> dict[str, Any]:
 
 
 @lru_cache(maxsize=1)
-def _load_secrets() -> dict[str, str]:
+def _load_secrets() -> Dict[str, str]:
     """Load secrets from environment or AWS Secrets Manager."""
     # First try environment variables (local dev)
     if os.environ.get("SUPABASE_JWT_SECRET"):
@@ -40,7 +40,7 @@ def _load_secrets() -> dict[str, str]:
 
 @dataclass(frozen=True)
 class Settings:
-    allowed_origins: tuple[str, ...]
+    allowed_origins: Tuple[str, ...]
     supabase_url: str
     supabase_anon_key: str
     supabase_service_role_key: str
