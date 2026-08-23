@@ -6,12 +6,13 @@ from mangum import Mangum
 
 from app.auth import get_current_user
 from app.config import settings
-from app.routers import decks_router
+from app.routers import decks_router, cards_router
 
 app = FastAPI(title="MemoryVault API")
 
 # Register routers
 app.include_router(decks_router)
+app.include_router(cards_router)
 
 app.add_middleware(
     CORSMiddleware,
