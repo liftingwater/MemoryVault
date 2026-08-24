@@ -164,6 +164,11 @@ Resources:
                 Effect: Allow
                 Action: secretsmanager:GetSecretValue
                 Resource: !Ref SupabaseSecret
+              - Sid: SSMParameterRead
+                Effect: Allow
+                Action: ssm:GetParameter
+                Resource:
+                  - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/memoryvault/supabase/*"
 
   # ── CloudWatch Log Group (30-day retention) ───────────────────────────────
   LambdaLogGroup:

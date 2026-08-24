@@ -8,19 +8,45 @@ DEFAULT_ALLOWED_ORIGINS = "http://localhost:5173"
 
 
 def _get_secrets_from_aws() -> Dict[str, Any]:
-    """Load Supabase secrets from AWS Secrets Manager (Lambda runtime only)."""
-    secret_arn = os.environ.get("SUPABASE_SECRET_ARN")
-    if not secret_arn:
-        return {}
+    """Load Supabase secrets from AWS Secrets Manager and SSM (Lambda runtime only)."""
+    secrets: Dict[str, Any] = {}
 
+    # Load from Secrets Manager (connection string)
+    secret_arn = os.environ.get("SUPABASE_SECRET_ARN")
+    if secret_arn:
+        try:
+            import boto3
+
+            sm_client = boto3.client("secretsmanager")
+            response = sm_client.get_secret_value(SecretId=secret_arn)
+            sm_secrets = json.loads(response["SecretString"])
+            # Support both flat keys and nested connection_string
+            if "connection_string" in sm_secrets:
+                secrets["db_url"] = sm_secrets["connection_string"]
+            secrets.update({k: v for k, v in sm_secrets.items() if k != "connection_string"})
+        except Exception:
+            pass
+
+    # Load from SSM Parameter Store (jwt-secret, service-role-key)
     try:
         import boto3
 
-        client = boto3.client("secretsmanager")
-        response = client.get_secret_value(SecretId=secret_arn)
-        return json.loads(response["SecretString"])  # type: ignore[no-any-return]
+        ssm = boto3.client("ssm")
+        ssm_keys = {
+            "/memoryvault/supabase/jwt-secret": "jwt_secret",
+            "/memoryvault/supabase/service-role-key": "service_role_key",
+        }
+        for ssm_name, secret_key in ssm_keys.items():
+            if secret_key not in secrets or not secrets[secret_key]:
+                try:
+                    param = ssm.get_parameter(Name=ssm_name, WithDecryption=True)
+                    secrets[secret_key] = param["Parameter"]["Value"]
+                except Exception:
+                    pass
     except Exception:
-        return {}
+        pass
+
+    return secrets
 
 
 @lru_cache(maxsize=1)
