@@ -49,16 +49,24 @@ export async function listDecks(fetchFn: typeof fetch = fetch): Promise<Deck[]> 
 	const token = await getAuthToken();
 	if (!token) throw new Error('Not authenticated');
 
-	const response = await fetchFn(`${API_BASE_URL}/decks`, {
-		headers: { Authorization: `Bearer ${token}` }
-	});
+	try {
+		const response = await fetchFn(`${API_BASE_URL}/decks`, {
+			headers: { Authorization: `Bearer ${token}` }
+		});
 
-	if (!response.ok) {
-		throw new Error(`Failed to list decks: ${response.status}`);
+		if (!response.ok) {
+			const text = await response.text();
+			throw new Error(`Failed to list decks: ${response.status} - ${text.substring(0, 200)}`);
+		}
+
+		const data = (await response.json()) as { decks: Deck[] };
+		return data.decks;
+	} catch (error) {
+		if (error instanceof Error && error.message.includes('JSON')) {
+			console.error('API error - likely backend not running at', API_BASE_URL);
+		}
+		throw error;
 	}
-
-	const data = (await response.json()) as { decks: Deck[] };
-	return data.decks;
 }
 
 export async function listCards(

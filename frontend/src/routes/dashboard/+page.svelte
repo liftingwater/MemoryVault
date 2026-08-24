@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { supabase } from '$lib/supabase';
 	import { goto } from '$app/navigation';
-	import { listDecks, type Deck } from '$lib/api';
+	import { listDecks, type Deck, API_BASE_URL } from '$lib/api';
 	import { onMount } from 'svelte';
 	import type { User } from '@supabase/supabase-js';
 
@@ -28,7 +28,15 @@
 		try {
 			decks = await listDecks();
 		} catch (e) {
-			error = e instanceof Error ? e.message : 'Failed to load decks';
+			const errorMsg = e instanceof Error ? e.message : 'Failed to load decks';
+			if (errorMsg.includes('JSON')) {
+				error = `Backend API not available at ${API_BASE_URL}. Make sure the FastAPI server is running.`;
+			} else if (errorMsg.includes('Not authenticated')) {
+				error = 'Not authenticated. Please log in again.';
+			} else {
+				error = errorMsg;
+			}
+			console.error('Failed to load decks:', e);
 		}
 		loading = false;
 	}
