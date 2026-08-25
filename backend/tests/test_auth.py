@@ -5,35 +5,15 @@ from datetime import datetime, timedelta, timezone
 
 import jwt
 import pytest
+from cryptography.hazmat.primitives.asymmetric import ec
 from fastapi.testclient import TestClient
 
 from app.auth import decode_jwt, AuthError
-from app.config import settings
-
-
-def create_test_jwt(user_id: str, email: str = "test@example.com", expired: bool = False) -> str:
-    """Create a valid JWT token for testing."""
-    now = datetime.now(timezone.utc)
-    exp_time = now + (timedelta(hours=-1) if expired else timedelta(hours=1))
-
-    payload = {
-        "sub": user_id,
-        "email": email,
-        "iat": int(now.timestamp()),
-        "exp": int(exp_time.timestamp()),
-        "aud": "authenticated",
-    }
-
-    token = jwt.encode(
-        payload,
-        settings.supabase_jwt_secret,
-        algorithm="HS256",
-    )
-    return token
+from tests.conftest import create_test_jwt
 
 
 def test_auth_decodes_valid_jwt() -> None:
-    """Test that valid JWT tokens are decoded correctly."""
+    """Test that valid ES256 JWT tokens are decoded correctly."""
     user_id = str(uuid.uuid4())
     token = create_test_jwt(user_id)
 
@@ -53,18 +33,31 @@ def test_auth_rejects_expired_token() -> None:
 
 
 def test_auth_rejects_invalid_signature() -> None:
-    """Test that tokens with invalid signatures are rejected."""
-    user_id = str(uuid.uuid4())
-
-    # Create token with wrong secret
+    """Test that a token signed by a different key is rejected."""
+    other_key = ec.generate_private_key(ec.SECP256R1())
     payload = {
-        "sub": user_id,
+        "sub": str(uuid.uuid4()),
         "email": "test@example.com",
         "iat": int(datetime.now(timezone.utc).timestamp()),
         "exp": int((datetime.now(timezone.utc) + timedelta(hours=1)).timestamp()),
+        "aud": "authenticated",
     }
+    token = jwt.encode(payload, other_key, algorithm="ES256")
 
-    token = jwt.encode(payload, "wrong_secret", algorithm="HS256")
+    with pytest.raises(AuthError, match="Invalid"):
+        decode_jwt(token)
+
+
+def test_auth_rejects_non_es256_algorithm() -> None:
+    """Test that non-ES256 tokens (e.g. HS256) are rejected outright."""
+    payload = {
+        "sub": str(uuid.uuid4()),
+        "email": "test@example.com",
+        "iat": int(datetime.now(timezone.utc).timestamp()),
+        "exp": int((datetime.now(timezone.utc) + timedelta(hours=1)).timestamp()),
+        "aud": "authenticated",
+    }
+    token = jwt.encode(payload, "some-shared-secret", algorithm="HS256")
 
     with pytest.raises(AuthError, match="Invalid"):
         decode_jwt(token)

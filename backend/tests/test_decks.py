@@ -1,26 +1,9 @@
 """Test Deck CRUD API endpoints."""
 import uuid
-from datetime import datetime, timedelta, timezone
 
-import jwt
-import pytest
 from fastapi.testclient import TestClient
 
-from app.config import settings
-
-
-def create_test_jwt(user_id: str, email: str = "test@example.com") -> str:
-    """Create a valid JWT token for testing."""
-    now = datetime.now(timezone.utc)
-    exp_time = now + timedelta(hours=1)
-    payload = {
-        "sub": user_id,
-        "email": email,
-        "iat": int(now.timestamp()),
-        "exp": int(exp_time.timestamp()),
-        "aud": "authenticated",
-    }
-    return jwt.encode(payload, settings.supabase_jwt_secret, algorithm="HS256")
+from tests.conftest import create_test_jwt
 
 
 # ── Create Deck ────────────────────────────────────────────────────────────
