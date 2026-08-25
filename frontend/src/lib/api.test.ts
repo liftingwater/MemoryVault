@@ -45,7 +45,7 @@ describe('listDecks', () => {
 
 		const decks = await listDecks('tok', fetchFn);
 
-		expect(fetchFn).toHaveBeenCalledWith(`${API_BASE_URL}/decks`, {
+		expect(fetchFn).toHaveBeenCalledWith(`${API_BASE_URL}/api/decks`, {
 			headers: { 'Content-Type': 'application/json', Authorization: 'Bearer tok' }
 		});
 		expect(decks).toEqual([sampleDeck]);
@@ -66,7 +66,7 @@ describe('getDeck', () => {
 
 		const deck = await getDeck('tok', 'deck-1', fetchFn);
 
-		expect(fetchFn).toHaveBeenCalledWith(`${API_BASE_URL}/decks/deck-1`, {
+		expect(fetchFn).toHaveBeenCalledWith(`${API_BASE_URL}/api/decks/deck-1`, {
 			headers: { 'Content-Type': 'application/json', Authorization: 'Bearer tok' }
 		});
 		expect(deck).toEqual(sampleDeck);
@@ -80,7 +80,7 @@ describe('createDeck', () => {
 
 		const deck = await createDeck('tok', input, fetchFn);
 
-		expect(fetchFn).toHaveBeenCalledWith(`${API_BASE_URL}/decks`, {
+		expect(fetchFn).toHaveBeenCalledWith(`${API_BASE_URL}/api/decks`, {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json', Authorization: 'Bearer tok' },
 			body: JSON.stringify(input)
@@ -96,7 +96,7 @@ describe('updateDeck', () => {
 
 		const deck = await updateDeck('tok', 'deck-1', input, fetchFn);
 
-		expect(fetchFn).toHaveBeenCalledWith(`${API_BASE_URL}/decks/deck-1`, {
+		expect(fetchFn).toHaveBeenCalledWith(`${API_BASE_URL}/api/decks/deck-1`, {
 			method: 'PUT',
 			headers: { 'Content-Type': 'application/json', Authorization: 'Bearer tok' },
 			body: JSON.stringify(input)
@@ -111,7 +111,7 @@ describe('deleteDeck', () => {
 
 		await deleteDeck('tok', 'deck-1', fetchFn);
 
-		expect(fetchFn).toHaveBeenCalledWith(`${API_BASE_URL}/decks/deck-1`, {
+		expect(fetchFn).toHaveBeenCalledWith(`${API_BASE_URL}/api/decks/deck-1`, {
 			method: 'DELETE',
 			headers: { 'Content-Type': 'application/json', Authorization: 'Bearer tok' }
 		});

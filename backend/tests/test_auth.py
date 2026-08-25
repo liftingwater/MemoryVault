@@ -67,16 +67,16 @@ def test_auth_rejects_non_es256_algorithm() -> None:
 
 
 def test_dashboard_returns_403_without_auth(client: TestClient) -> None:
-    """Test that /dashboard returns 403 when no auth header is provided."""
+    """Test that /api/dashboard returns 403 when no auth header is provided."""
     # HTTPBearer dependency returns 403 for missing credentials, not 401
-    response = client.get("/dashboard")
+    response = client.get("/api/dashboard")
     assert response.status_code == 403
 
 
 def test_dashboard_returns_401_with_invalid_token(client: TestClient) -> None:
-    """Test that /dashboard returns 401 with invalid token."""
+    """Test that /api/dashboard returns 401 with invalid token."""
     response = client.get(
-        "/dashboard",
+        "/api/dashboard",
         headers={"Authorization": "Bearer invalid_token"}
     )
     assert response.status_code == 401
@@ -84,13 +84,13 @@ def test_dashboard_returns_401_with_invalid_token(client: TestClient) -> None:
 
 
 def test_dashboard_returns_200_with_valid_token(client: TestClient) -> None:
-    """Test that /dashboard returns 200 with valid JWT."""
+    """Test that /api/dashboard returns 200 with valid JWT."""
     user_id = str(uuid.uuid4())
     email = "test@example.com"
     token = create_test_jwt(user_id, email)
 
     response = client.get(
-        "/dashboard",
+        "/api/dashboard",
         headers={"Authorization": f"Bearer {token}"}
     )
 
@@ -102,12 +102,12 @@ def test_dashboard_returns_200_with_valid_token(client: TestClient) -> None:
 
 
 def test_dashboard_returns_401_with_expired_token(client: TestClient) -> None:
-    """Test that /dashboard returns 401 with expired token."""
+    """Test that /api/dashboard returns 401 with expired token."""
     user_id = str(uuid.uuid4())
     token = create_test_jwt(user_id, expired=True)
 
     response = client.get(
-        "/dashboard",
+        "/api/dashboard",
         headers={"Authorization": f"Bearer {token}"}
     )
 

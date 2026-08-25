@@ -55,7 +55,7 @@ async function readError(response: Response): Promise<string> {
 }
 
 export async function listDecks(token: string, fetchFn: typeof fetch = fetch): Promise<Deck[]> {
-	const response = await fetchFn(`${API_BASE_URL}/decks`, {
+	const response = await fetchFn(`${API_BASE_URL}/api/decks`, {
 		headers: authHeaders(token)
 	});
 
@@ -72,7 +72,7 @@ export async function getDeck(
 	id: string,
 	fetchFn: typeof fetch = fetch
 ): Promise<Deck> {
-	const response = await fetchFn(`${API_BASE_URL}/decks/${id}`, {
+	const response = await fetchFn(`${API_BASE_URL}/api/decks/${id}`, {
 		headers: authHeaders(token)
 	});
 
@@ -88,7 +88,7 @@ export async function createDeck(
 	input: DeckInput,
 	fetchFn: typeof fetch = fetch
 ): Promise<Deck> {
-	const response = await fetchFn(`${API_BASE_URL}/decks`, {
+	const response = await fetchFn(`${API_BASE_URL}/api/decks`, {
 		method: 'POST',
 		headers: authHeaders(token),
 		body: JSON.stringify(input)
@@ -107,7 +107,7 @@ export async function updateDeck(
 	input: DeckInput,
 	fetchFn: typeof fetch = fetch
 ): Promise<Deck> {
-	const response = await fetchFn(`${API_BASE_URL}/decks/${id}`, {
+	const response = await fetchFn(`${API_BASE_URL}/api/decks/${id}`, {
 		method: 'PUT',
 		headers: authHeaders(token),
 		body: JSON.stringify(input)
@@ -125,7 +125,7 @@ export async function deleteDeck(
 	id: string,
 	fetchFn: typeof fetch = fetch
 ): Promise<void> {
-	const response = await fetchFn(`${API_BASE_URL}/decks/${id}`, {
+	const response = await fetchFn(`${API_BASE_URL}/api/decks/${id}`, {
 		method: 'DELETE',
 		headers: authHeaders(token)
 	});
