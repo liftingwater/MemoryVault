@@ -1,9 +1,30 @@
 """Test Deck CRUD API endpoints."""
 import uuid
+from datetime import datetime
 
 from fastapi.testclient import TestClient
 
+from app.models import DeckResponse
 from tests.conftest import create_test_jwt
+
+
+# ── Response model ─────────────────────────────────────────────────────────
+
+
+def test_deck_response_coerces_uuid_id_to_str() -> None:
+    """Postgres returns id as uuid.UUID; DeckResponse must coerce it to str."""
+    deck_id = uuid.uuid4()
+    now = datetime.utcnow()
+    resp = DeckResponse(
+        id=deck_id,
+        name="Deck",
+        description=None,
+        tags=[],
+        created_at=now,
+        updated_at=now,
+    )
+    assert resp.id == str(deck_id)
+    assert isinstance(resp.id, str)
 
 
 # ── Create Deck ────────────────────────────────────────────────────────────
