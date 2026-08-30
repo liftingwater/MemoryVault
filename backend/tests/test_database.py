@@ -159,13 +159,15 @@ class MockCursor:
     @staticmethod
     def _deck_to_row(deck: Dict[str, Any]) -> tuple:
         """Convert deck dict to row tuple."""
-        return (deck["id"], deck["name"], deck["description"], deck["tags"],
+        # psycopg returns the uuid column as a uuid.UUID, so mirror that here.
+        return (uuid.UUID(deck["id"]), deck["name"], deck["description"], deck["tags"],
                 deck["created_at"], deck["updated_at"])
-    
+
     @staticmethod
     def _deck_to_row_with_count(deck: Dict[str, Any]) -> tuple:
         """Convert deck dict to row tuple with card count."""
-        return (deck["id"], deck["name"], deck["description"], deck["tags"],
+        # psycopg returns the uuid column as a uuid.UUID, so mirror that here.
+        return (uuid.UUID(deck["id"]), deck["name"], deck["description"], deck["tags"],
                 deck["created_at"], deck["updated_at"], deck.get("card_count", 0))
 
 

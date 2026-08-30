@@ -77,6 +77,31 @@ Resources:
         SigningBehavior: always
         SigningProtocol: sigv4
 
+  # SPA deep-link fallback, scoped to the S3 (default) behavior only. Client
+  # routes like /dashboard or /decks/{id} have no file extension and no S3
+  # object, so rewrite them to the SvelteKit entry point. Requests with an
+  # extension (static assets) pass through. /api/* and /health use their own
+  # behaviors and never hit this function, so API 4xx responses are no longer
+  # masked as index.html (which distribution-wide CustomErrorResponses did).
+  SpaRewriteFunction:
+    Type: AWS::CloudFront::Function
+    Properties:
+      Name: !Sub "${AWS::StackName}-spa-rewrite"
+      AutoPublish: true
+      FunctionConfig:
+        Comment: Rewrite extension-less SPA routes to /index.html
+        Runtime: cloudfront-js-1.0
+      FunctionCode: |
+        function handler(event) {
+            var request = event.request;
+            var uri = request.uri;
+            var lastSegment = uri.substring(uri.lastIndexOf('/') + 1);
+            if (lastSegment.indexOf('.') === -1) {
+                request.uri = '/index.html';
+            }
+            return request;
+        }
+
   Distribution:
     Type: AWS::CloudFront::Distribution
     Properties:
@@ -99,6 +124,9 @@ Resources:
           # CachingOptimized managed policy
           CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
           AllowedMethods: [GET, HEAD]
+          FunctionAssociations:
+            - EventType: viewer-request
+              FunctionARN: !GetAtt SpaRewriteFunction.FunctionARN
         CacheBehaviors:
           - PathPattern: "/health"
             TargetOriginId: ApiGateway
@@ -114,13 +142,6 @@ Resources:
             CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
             AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
             OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
-        CustomErrorResponses:
-          - ErrorCode: 403
-            ResponseCode: 200
-            ResponsePagePath: /index.html
-          - ErrorCode: 404
-            ResponseCode: 200
-            ResponsePagePath: /index.html
 
   # ── IAM Role ──────────────────────────────────────────────────────────────
   LambdaExecutionRole:

@@ -2,12 +2,12 @@ import json
 import os
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Any, Dict, Tuple
+from typing import Dict, Tuple
 
 DEFAULT_ALLOWED_ORIGINS = "http://localhost:5173"
 
 
-def _get_secrets_from_aws() -> Dict[str, Any]:
+def _get_secrets_from_aws() -> Dict[str, str]:
     """Load Supabase secrets from AWS Secrets Manager (Lambda runtime only)."""
     secret_arn = os.environ.get("SUPABASE_SECRET_ARN")
     if not secret_arn:
@@ -18,9 +18,17 @@ def _get_secrets_from_aws() -> Dict[str, Any]:
 
         client = boto3.client("secretsmanager")
         response = client.get_secret_value(SecretId=secret_arn)
-        return json.loads(response["SecretString"])  # type: ignore[no-any-return]
+        raw = json.loads(response["SecretString"])
     except Exception:
         return {}
+
+    # scripts/setup-supabase.sh stores the Postgres URL under "connection_string";
+    # normalise it to the canonical "db_url" key the rest of the app reads.
+    return {
+        "db_url": raw.get("db_url") or raw.get("connection_string", ""),
+        "service_role_key": raw.get("service_role_key", ""),
+        "jwt_secret": raw.get("jwt_secret", ""),
+    }
 
 
 @lru_cache(maxsize=1)
