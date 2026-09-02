@@ -44,10 +44,21 @@ class MockCursor:
         # Normalize query for checking
         normalized = query.strip().upper()
 
+        # Dispatch write operations first: their queries may embed a SELECT
+        # subquery (e.g. DELETE ... IN (SELECT id FROM decks ...)) that would
+        # otherwise be mis-matched by the SELECT branches below.
         if "INSERT INTO DECKS" in normalized:
             self._handle_insert_deck(query, params)
         elif "INSERT INTO CARDS" in normalized:
             self._handle_insert_card(query, params)
+        elif "UPDATE CARDS" in normalized:
+            self._handle_update_card(query, params)
+        elif "UPDATE DECKS" in normalized:
+            self._handle_update_deck(query, params)
+        elif "DELETE FROM CARDS" in normalized:
+            self._handle_delete_card(query, params)
+        elif "DELETE FROM DECKS" in normalized:
+            self._handle_delete_deck(query, params)
         elif "SELECT ID FROM DECKS" in normalized:
             # Simple ownership check query
             self._handle_select_deck_id(query, params)
@@ -65,14 +76,6 @@ class MockCursor:
                 self._handle_select_decks(query, params)
         elif "SELECT" in normalized and "CARDS" in normalized:
             self._handle_select_cards(query, params)
-        elif "UPDATE CARDS" in normalized:
-            self._handle_update_card(query, params)
-        elif "UPDATE DECKS" in normalized:
-            self._handle_update_deck(query, params)
-        elif "DELETE FROM CARDS" in normalized:
-            self._handle_delete_card(query, params)
-        elif "DELETE FROM DECKS" in normalized:
-            self._handle_delete_deck(query, params)
     
     def _handle_select_deck_id(self, query: str, params: Optional[List[Any]]) -> None:
         """Handle SELECT id FROM decks WHERE id = ? AND user_id = ? query."""

@@ -10,15 +10,10 @@ from app.routers import decks_router, cards_router
 
 app = FastAPI(title="MemoryVault API")
 
-<<<<<<< HEAD
 # Register routers under /api so the SPA (served from the same CloudFront
 # domain) keeps ownership of its own client-side routes like /decks/[id].
 app.include_router(decks_router, prefix="/api")
-=======
-# Register routers
-app.include_router(decks_router)
-app.include_router(cards_router)
->>>>>>> 9070618 (Implement task 5: Card CRUD & Cloze Editor)
+app.include_router(cards_router, prefix="/api")
 
 app.add_middleware(
     CORSMiddleware,

@@ -1,26 +1,9 @@
 """Test Card CRUD API endpoints."""
 import uuid
-from datetime import datetime, timedelta, timezone
 
-import jwt
-import pytest
 from fastapi.testclient import TestClient
 
-from app.config import settings
-
-
-def create_test_jwt(user_id: str, email: str = "test@example.com") -> str:
-    """Create a valid JWT token for testing."""
-    now = datetime.now(timezone.utc)
-    exp_time = now + timedelta(hours=1)
-    payload = {
-        "sub": user_id,
-        "email": email,
-        "iat": int(now.timestamp()),
-        "exp": int(exp_time.timestamp()),
-        "aud": "authenticated",
-    }
-    return jwt.encode(payload, settings.supabase_jwt_secret, algorithm="HS256")
+from tests.conftest import create_test_jwt
 
 
 # ── Create Card ────────────────────────────────────────────────────────────
@@ -30,7 +13,7 @@ def test_create_card_requires_auth(client: TestClient) -> None:
     """Test that creating a card requires authentication."""
     deck_id = str(uuid.uuid4())
     response = client.post(
-        f"/decks/{deck_id}/cards",
+        f"/api/decks/{deck_id}/cards",
         json={"card_type": "front_back", "front_md": "Q", "back_md": "A"},
     )
     assert response.status_code == 403
@@ -43,15 +26,15 @@ def test_create_front_back_card(client: TestClient) -> None:
     
     # Create deck first
     deck_response = client.post(
-        "/decks",
+        "/api/decks",
         json={"name": "Test Deck"},
         headers={"Authorization": f"Bearer {token}"}
     )
     deck_id = deck_response.json()["id"]
-    
+
     # Create card
     response = client.post(
-        f"/decks/{deck_id}/cards",
+        f"/api/decks/{deck_id}/cards",
         json={
             "card_type": "front_back",
             "front_md": "What is 2+2?",
@@ -77,15 +60,15 @@ def test_create_cloze_card(client: TestClient) -> None:
     
     # Create deck
     deck_response = client.post(
-        "/decks",
+        "/api/decks",
         json={"name": "Test Deck"},
         headers={"Authorization": f"Bearer {token}"}
     )
     deck_id = deck_response.json()["id"]
-    
+
     # Create cloze card
     response = client.post(
-        f"/decks/{deck_id}/cards",
+        f"/api/decks/{deck_id}/cards",
         json={
             "card_type": "cloze",
             "front_md": "The capital of France is {{Paris}}",
@@ -108,14 +91,14 @@ def test_create_card_missing_back_md(client: TestClient) -> None:
     token = create_test_jwt(user_id)
     
     deck_response = client.post(
-        "/decks",
+        "/api/decks",
         json={"name": "Test Deck"},
         headers={"Authorization": f"Bearer {token}"}
     )
     deck_id = deck_response.json()["id"]
-    
+
     response = client.post(
-        f"/decks/{deck_id}/cards",
+        f"/api/decks/{deck_id}/cards",
         json={
             "card_type": "front_back",
             "front_md": "Question"
@@ -132,14 +115,14 @@ def test_create_card_missing_cloze_text(client: TestClient) -> None:
     token = create_test_jwt(user_id)
     
     deck_response = client.post(
-        "/decks",
+        "/api/decks",
         json={"name": "Test Deck"},
         headers={"Authorization": f"Bearer {token}"}
     )
     deck_id = deck_response.json()["id"]
-    
+
     response = client.post(
-        f"/decks/{deck_id}/cards",
+        f"/api/decks/{deck_id}/cards",
         json={
             "card_type": "cloze",
             "front_md": "Text",
@@ -157,14 +140,14 @@ def test_create_card_empty_front_md(client: TestClient) -> None:
     token = create_test_jwt(user_id)
     
     deck_response = client.post(
-        "/decks",
+        "/api/decks",
         json={"name": "Test Deck"},
         headers={"Authorization": f"Bearer {token}"}
     )
     deck_id = deck_response.json()["id"]
-    
+
     response = client.post(
-        f"/decks/{deck_id}/cards",
+        f"/api/decks/{deck_id}/cards",
         json={
             "card_type": "front_back",
             "front_md": "",
@@ -182,7 +165,7 @@ def test_create_card_deck_not_found(client: TestClient) -> None:
     token = create_test_jwt(user_id)
     
     response = client.post(
-        f"/decks/{uuid.uuid4()}/cards",
+        f"/api/decks/{uuid.uuid4()}/cards",
         json={
             "card_type": "front_back",
             "front_md": "Q",
@@ -199,7 +182,7 @@ def test_create_card_deck_not_found(client: TestClient) -> None:
 
 def test_list_cards_requires_auth(client: TestClient) -> None:
     """Test that listing cards requires authentication."""
-    response = client.get(f"/decks/{uuid.uuid4()}/cards")
+    response = client.get(f"/api/decks/{uuid.uuid4()}/cards")
     assert response.status_code == 403
 
 
@@ -209,14 +192,14 @@ def test_list_cards_empty_deck(client: TestClient) -> None:
     token = create_test_jwt(user_id)
     
     deck_response = client.post(
-        "/decks",
+        "/api/decks",
         json={"name": "Empty Deck"},
         headers={"Authorization": f"Bearer {token}"}
     )
     deck_id = deck_response.json()["id"]
-    
+
     response = client.get(
-        f"/decks/{deck_id}/cards",
+        f"/api/decks/{deck_id}/cards",
         headers={"Authorization": f"Bearer {token}"}
     )
     
@@ -233,27 +216,27 @@ def test_list_cards_with_search(client: TestClient) -> None:
     
     # Create deck
     deck_response = client.post(
-        "/decks",
+        "/api/decks",
         json={"name": "Test Deck"},
         headers={"Authorization": f"Bearer {token}"}
     )
     deck_id = deck_response.json()["id"]
-    
+
     # Create multiple cards
     client.post(
-        f"/decks/{deck_id}/cards",
+        f"/api/decks/{deck_id}/cards",
         json={"card_type": "front_back", "front_md": "Python question", "back_md": "Answer"},
         headers={"Authorization": f"Bearer {token}"}
     )
     client.post(
-        f"/decks/{deck_id}/cards",
+        f"/api/decks/{deck_id}/cards",
         json={"card_type": "front_back", "front_md": "Java question", "back_md": "Answer"},
         headers={"Authorization": f"Bearer {token}"}
     )
-    
+
     # Search for Python
     response = client.get(
-        f"/decks/{deck_id}/cards?search=Python",
+        f"/api/decks/{deck_id}/cards?search=Python",
         headers={"Authorization": f"Bearer {token}"}
     )
     
@@ -272,15 +255,15 @@ def test_list_cards_wrong_deck_owner(client: TestClient) -> None:
     
     # User1 creates deck
     deck_response = client.post(
-        "/decks",
+        "/api/decks",
         json={"name": "User1 Deck"},
         headers={"Authorization": f"Bearer {token1}"}
     )
     deck_id = deck_response.json()["id"]
-    
+
     # User2 tries to list cards
     response = client.get(
-        f"/decks/{deck_id}/cards",
+        f"/api/decks/{deck_id}/cards",
         headers={"Authorization": f"Bearer {token2}"}
     )
     
@@ -294,7 +277,7 @@ def test_list_cards_wrong_deck_owner(client: TestClient) -> None:
 def test_update_card_requires_auth(client: TestClient) -> None:
     """Test that updating a card requires authentication."""
     response = client.put(
-        f"/cards/{uuid.uuid4()}",
+        f"/api/cards/{uuid.uuid4()}",
         json={"front_md": "New question"}
     )
     assert response.status_code == 403
@@ -307,22 +290,22 @@ def test_update_card_front_content(client: TestClient) -> None:
     
     # Create deck and card
     deck_response = client.post(
-        "/decks",
+        "/api/decks",
         json={"name": "Test Deck"},
         headers={"Authorization": f"Bearer {token}"}
     )
     deck_id = deck_response.json()["id"]
-    
+
     card_response = client.post(
-        f"/decks/{deck_id}/cards",
+        f"/api/decks/{deck_id}/cards",
         json={"card_type": "front_back", "front_md": "Old Q", "back_md": "A"},
         headers={"Authorization": f"Bearer {token}"}
     )
     card_id = card_response.json()["id"]
-    
+
     # Update card
     response = client.put(
-        f"/cards/{card_id}",
+        f"/api/cards/{card_id}",
         json={"front_md": "New Q"},
         headers={"Authorization": f"Bearer {token}"}
     )
@@ -339,7 +322,7 @@ def test_update_card_not_found(client: TestClient) -> None:
     token = create_test_jwt(user_id)
     
     response = client.put(
-        f"/cards/{uuid.uuid4()}",
+        f"/api/cards/{uuid.uuid4()}",
         json={"front_md": "New"},
         headers={"Authorization": f"Bearer {token}"}
     )
@@ -356,22 +339,22 @@ def test_update_card_wrong_owner(client: TestClient) -> None:
     
     # User1 creates deck and card
     deck_response = client.post(
-        "/decks",
+        "/api/decks",
         json={"name": "User1 Deck"},
         headers={"Authorization": f"Bearer {token1}"}
     )
     deck_id = deck_response.json()["id"]
-    
+
     card_response = client.post(
-        f"/decks/{deck_id}/cards",
+        f"/api/decks/{deck_id}/cards",
         json={"card_type": "front_back", "front_md": "Q", "back_md": "A"},
         headers={"Authorization": f"Bearer {token1}"}
     )
     card_id = card_response.json()["id"]
-    
+
     # User2 tries to update
     response = client.put(
-        f"/cards/{card_id}",
+        f"/api/cards/{card_id}",
         json={"front_md": "Hacked"},
         headers={"Authorization": f"Bearer {token2}"}
     )
@@ -384,22 +367,42 @@ def test_update_card_wrong_owner(client: TestClient) -> None:
 
 def test_delete_card_requires_auth(client: TestClient) -> None:
     """Test that deleting a card requires authentication."""
-    response = client.delete(f"/cards/{uuid.uuid4()}")
+    response = client.delete(f"/api/cards/{uuid.uuid4()}")
     assert response.status_code == 403
 
 
 def test_delete_card_simple(client: TestClient) -> None:
-    """Test deleting a card returns 404 for non-existent card (deletion not yet mocked)."""
+    """Test deleting an existing card removes it from the deck."""
     user_id = str(uuid.uuid4())
     token = create_test_jwt(user_id)
 
-    # Try to delete a non-existent card
-    response = client.delete(
-        f"/cards/{uuid.uuid4()}",
+    deck_response = client.post(
+        "/api/decks",
+        json={"name": "Test Deck"},
         headers={"Authorization": f"Bearer {token}"}
     )
+    deck_id = deck_response.json()["id"]
 
-    assert response.status_code == 404
+    card_response = client.post(
+        f"/api/decks/{deck_id}/cards",
+        json={"card_type": "front_back", "front_md": "Q", "back_md": "A"},
+        headers={"Authorization": f"Bearer {token}"}
+    )
+    card_id = card_response.json()["id"]
+
+    # Delete the card
+    response = client.delete(
+        f"/api/cards/{card_id}",
+        headers={"Authorization": f"Bearer {token}"}
+    )
+    assert response.status_code == 204
+
+    # Verify it is gone
+    list_response = client.get(
+        f"/api/decks/{deck_id}/cards",
+        headers={"Authorization": f"Bearer {token}"}
+    )
+    assert list_response.json()["total"] == 0
 
 
 def test_delete_card_not_found(client: TestClient) -> None:
@@ -408,10 +411,10 @@ def test_delete_card_not_found(client: TestClient) -> None:
     token = create_test_jwt(user_id)
     
     response = client.delete(
-        f"/cards/{uuid.uuid4()}",
+        f"/api/cards/{uuid.uuid4()}",
         headers={"Authorization": f"Bearer {token}"}
     )
-    
+
     assert response.status_code == 404
 
 
@@ -424,30 +427,30 @@ def test_delete_card_wrong_owner(client: TestClient) -> None:
     
     # User1 creates card
     deck_response = client.post(
-        "/decks",
+        "/api/decks",
         json={"name": "User1 Deck"},
         headers={"Authorization": f"Bearer {token1}"}
     )
     deck_id = deck_response.json()["id"]
-    
+
     card_response = client.post(
-        f"/decks/{deck_id}/cards",
+        f"/api/decks/{deck_id}/cards",
         json={"card_type": "front_back", "front_md": "Q", "back_md": "A"},
         headers={"Authorization": f"Bearer {token1}"}
     )
     card_id = card_response.json()["id"]
-    
+
     # User2 tries to delete
     response = client.delete(
-        f"/cards/{card_id}",
+        f"/api/cards/{card_id}",
         headers={"Authorization": f"Bearer {token2}"}
     )
-    
+
     assert response.status_code == 404
-    
+
     # Verify card still exists
     list_response = client.get(
-        f"/decks/{deck_id}/cards",
+        f"/api/decks/{deck_id}/cards",
         headers={"Authorization": f"Bearer {token1}"}
     )
     assert list_response.json()["total"] == 1

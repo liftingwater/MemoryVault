@@ -134,3 +134,113 @@ export async function deleteDeck(
 		throw new Error(await readError(response));
 	}
 }
+
+export type CardType = 'front_back' | 'cloze';
+
+export type Card = {
+	id: string;
+	deck_id: string;
+	card_type: CardType;
+	front_md: string;
+	back_md: string | null;
+	cloze_text_md: string | null;
+	cloze_answer: string | null;
+	created_at: string;
+	updated_at: string;
+};
+
+export type CardListResponse = {
+	cards: Card[];
+	total: number;
+};
+
+export type CardCreateInput = {
+	card_type: CardType;
+	front_md: string;
+	back_md?: string | null;
+	cloze_text_md?: string | null;
+	cloze_answer?: string | null;
+};
+
+export type CardUpdateInput = {
+	front_md?: string | null;
+	back_md?: string | null;
+	cloze_text_md?: string | null;
+	cloze_answer?: string | null;
+};
+
+export async function listCards(
+	token: string,
+	deckId: string,
+	search?: string,
+	fetchFn: typeof fetch = fetch
+): Promise<Card[]> {
+	const url = new URL(`${API_BASE_URL}/api/decks/${deckId}/cards`);
+	if (search) {
+		url.searchParams.set('search', search);
+	}
+
+	const response = await fetchFn(url.toString(), {
+		headers: authHeaders(token)
+	});
+
+	if (!response.ok) {
+		throw new Error(await readError(response));
+	}
+
+	const body = (await response.json()) as CardListResponse;
+	return body.cards;
+}
+
+export async function createCard(
+	token: string,
+	deckId: string,
+	input: CardCreateInput,
+	fetchFn: typeof fetch = fetch
+): Promise<Card> {
+	const response = await fetchFn(`${API_BASE_URL}/api/decks/${deckId}/cards`, {
+		method: 'POST',
+		headers: authHeaders(token),
+		body: JSON.stringify(input)
+	});
+
+	if (!response.ok) {
+		throw new Error(await readError(response));
+	}
+
+	return (await response.json()) as Card;
+}
+
+export async function updateCard(
+	token: string,
+	cardId: string,
+	input: CardUpdateInput,
+	fetchFn: typeof fetch = fetch
+): Promise<Card> {
+	const response = await fetchFn(`${API_BASE_URL}/api/cards/${cardId}`, {
+		method: 'PUT',
+		headers: authHeaders(token),
+		body: JSON.stringify(input)
+	});
+
+	if (!response.ok) {
+		throw new Error(await readError(response));
+	}
+
+	return (await response.json()) as Card;
+}
+
+export async function deleteCard(
+	token: string,
+	cardId: string,
+	fetchFn: typeof fetch = fetch
+): Promise<void> {
+	const response = await fetchFn(`${API_BASE_URL}/api/cards/${cardId}`, {
+		method: 'DELETE',
+		headers: authHeaders(token)
+	});
+
+	if (!response.ok) {
+		throw new Error(await readError(response));
+	}
+}
