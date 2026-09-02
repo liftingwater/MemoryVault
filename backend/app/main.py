@@ -6,13 +6,14 @@ from mangum import Mangum
 
 from app.auth import get_current_user
 from app.config import settings
-from app.routers import decks_router
+from app.routers import decks_router, cards_router
 
 app = FastAPI(title="MemoryVault API")
 
 # Register routers under /api so the SPA (served from the same CloudFront
 # domain) keeps ownership of its own client-side routes like /decks/[id].
 app.include_router(decks_router, prefix="/api")
+app.include_router(cards_router, prefix="/api")
 
 app.add_middleware(
     CORSMiddleware,

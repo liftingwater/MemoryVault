@@ -3,7 +3,20 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
-	import { deleteDeck, getDeck, updateDeck, type Deck } from '$lib/api';
+	import {
+		createCard,
+		deleteCard,
+		deleteDeck,
+		getDeck,
+		listCards,
+		updateCard,
+		updateDeck,
+		type Card,
+		type CardCreateInput,
+		type Deck
+	} from '$lib/api';
+	import CardEditor from '$lib/CardEditor.svelte';
+	import { renderMarkdown } from '$lib/markdown';
 
 	// This route always provides the `id` param.
 	const deckId = page.params.id as string;
@@ -18,6 +31,14 @@
 	let tagsInput = $state('');
 	let saving = $state(false);
 	let deleting = $state(false);
+
+	let cards = $state<Card[]>([]);
+	let cardsError = $state('');
+	let search = $state('');
+	let searchTimer: ReturnType<typeof setTimeout> | null = null;
+	let creatingCard = $state(false);
+	let editingCardId = $state<string | null>(null);
+	let savingCard = $state(false);
 
 	function parseTags(value: string): string[] {
 		return value
@@ -46,12 +67,75 @@
 		try {
 			deck = await getDeck(token, deckId);
 			syncForm(deck);
+			await loadCards();
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to load deck';
 		} finally {
 			loading = false;
 		}
 	});
+
+	async function loadCards() {
+		cardsError = '';
+		try {
+			cards = await listCards(token, deckId, search.trim() || undefined);
+		} catch (e) {
+			cardsError = e instanceof Error ? e.message : 'Failed to load cards';
+		}
+	}
+
+	function handleSearchInput() {
+		if (searchTimer) {
+			clearTimeout(searchTimer);
+		}
+		searchTimer = setTimeout(loadCards, 250);
+	}
+
+	async function handleCreateCard(input: CardCreateInput) {
+		cardsError = '';
+		savingCard = true;
+		try {
+			const card = await createCard(token, deckId, input);
+			cards = [card, ...cards];
+			creatingCard = false;
+		} catch (e) {
+			cardsError = e instanceof Error ? e.message : 'Failed to create card';
+		} finally {
+			savingCard = false;
+		}
+	}
+
+	async function handleUpdateCard(cardId: string, input: CardCreateInput) {
+		cardsError = '';
+		savingCard = true;
+		try {
+			const updated = await updateCard(token, cardId, {
+				front_md: input.front_md,
+				back_md: input.back_md ?? null,
+				cloze_text_md: input.cloze_text_md ?? null,
+				cloze_answer: input.cloze_answer ?? null
+			});
+			cards = cards.map((c) => (c.id === cardId ? updated : c));
+			editingCardId = null;
+		} catch (e) {
+			cardsError = e instanceof Error ? e.message : 'Failed to update card';
+		} finally {
+			savingCard = false;
+		}
+	}
+
+	async function handleDeleteCard(cardId: string) {
+		if (!confirm('Delete this card? This cannot be undone.')) {
+			return;
+		}
+		cardsError = '';
+		try {
+			await deleteCard(token, cardId);
+			cards = cards.filter((c) => c.id !== cardId);
+		} catch (e) {
+			cardsError = e instanceof Error ? e.message : 'Failed to delete card';
+		}
+	}
 
 	async function handleSave(event: SubmitEvent) {
 		event.preventDefault();
@@ -119,6 +203,69 @@
 					{saving ? 'Saving...' : 'Save Changes'}
 				</button>
 			</form>
+		</section>
+
+		<section>
+			<h2>Cards</h2>
+
+			{#if cardsError}
+				<p class="error">{cardsError}</p>
+			{/if}
+
+			<div class="card-toolbar">
+				<input
+					class="search"
+					placeholder="Search cards..."
+					bind:value={search}
+					oninput={handleSearchInput}
+				/>
+				{#if !creatingCard && editingCardId === null}
+					<button onclick={() => (creatingCard = true)}>Add Card</button>
+				{/if}
+			</div>
+
+			{#if creatingCard}
+				<div class="card-form">
+					<CardEditor
+						saving={savingCard}
+						onsave={handleCreateCard}
+						oncancel={() => (creatingCard = false)}
+					/>
+				</div>
+			{/if}
+
+			{#if cards.length === 0}
+				<p>No cards yet. Add your first card above.</p>
+			{:else}
+				<ul class="cards">
+					{#each cards as card (card.id)}
+						<li>
+							{#if editingCardId === card.id}
+								<CardEditor
+									{card}
+									saving={savingCard}
+									onsave={(input) => handleUpdateCard(card.id, input)}
+									oncancel={() => (editingCardId = null)}
+								/>
+							{:else}
+								<span class="badge">{card.card_type}</span>
+								<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+								<div class="card-preview">{@html renderMarkdown(card.front_md)}</div>
+								{#if card.card_type === 'front_back' && card.back_md}
+									<!-- eslint-disable-next-line svelte/no-at-html-tags -->
+									<div class="card-preview back">{@html renderMarkdown(card.back_md)}</div>
+								{/if}
+								<div class="card-actions">
+									<button class="link" onclick={() => (editingCardId = card.id)}>Edit</button>
+									<button class="link delete" onclick={() => handleDeleteCard(card.id)}>
+										Delete
+									</button>
+								</div>
+							{/if}
+						</li>
+					{/each}
+				</ul>
+			{/if}
 		</section>
 
 		<section class="danger">
@@ -191,6 +338,83 @@
 	}
 
 	.error {
+		color: #cc0000;
+	}
+
+	.card-toolbar {
+		display: flex;
+		gap: 0.5rem;
+		margin-bottom: 1rem;
+	}
+
+	.search {
+		flex: 1;
+		padding: 0.5rem;
+		border: 1px solid #ccc;
+		border-radius: 4px;
+	}
+
+	.card-form {
+		margin-bottom: 1rem;
+		padding: 1rem;
+		border: 1px solid #ddd;
+		border-radius: 6px;
+	}
+
+	ul.cards {
+		list-style: none;
+		padding: 0;
+		margin: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 1rem;
+	}
+
+	ul.cards li {
+		padding: 0.75rem;
+		border: 1px solid #eee;
+		border-radius: 6px;
+	}
+
+	.badge {
+		display: inline-block;
+		font-size: 0.7rem;
+		text-transform: uppercase;
+		background: #eef;
+		color: #336;
+		padding: 0.1rem 0.4rem;
+		border-radius: 3px;
+		margin-bottom: 0.5rem;
+	}
+
+	.card-preview.back {
+		color: #555;
+		border-top: 1px dashed #ddd;
+		margin-top: 0.5rem;
+		padding-top: 0.5rem;
+	}
+
+	.card-preview :global(.cloze) {
+		background: #ffe08a;
+		border-radius: 3px;
+		padding: 0 0.2rem;
+	}
+
+	.card-actions {
+		display: flex;
+		gap: 0.75rem;
+		margin-top: 0.5rem;
+	}
+
+	button.link {
+		background: none;
+		color: #0066cc;
+		padding: 0;
+		font-size: 0.85rem;
+	}
+
+	button.link.delete {
+		background: none;
 		color: #cc0000;
 	}
 </style>
