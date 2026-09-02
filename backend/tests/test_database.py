@@ -7,12 +7,14 @@ import uuid
 
 # In-memory storage for test data
 _test_decks: Dict[str, Dict[str, Any]] = {}
+_test_cards: Dict[str, Dict[str, Any]] = {}
 
 
 def _reset_test_data() -> None:
     """Reset all test data."""
-    global _test_decks
+    global _test_decks, _test_cards
     _test_decks.clear()
+    _test_cards.clear()
 
 
 class MockCursor:
@@ -35,10 +37,25 @@ class MockCursor:
     
     def execute(self, query: str, params: Optional[List[Any]] = None) -> None:
         """Execute a mocked SQL query."""
-        if "INSERT INTO decks" in query:
+        # Clear previous results on new query
+        self._last_result = None
+        self.description = None
+        self._rowcount = 0
+        # Normalize query for checking
+        normalized = query.strip().upper()
+
+        if "INSERT INTO DECKS" in normalized:
             self._handle_insert_deck(query, params)
-        elif "SELECT" in query and "decks" in query:
-            if "COUNT(c.id)" in query:
+        elif "INSERT INTO CARDS" in normalized:
+            self._handle_insert_card(query, params)
+        elif "SELECT ID FROM DECKS" in normalized:
+            # Simple ownership check query
+            self._handle_select_deck_id(query, params)
+        elif "SELECT" in normalized and "JOIN" in normalized:
+            # Handle JOIN queries
+            self._handle_select_with_join(query, params)
+        elif "SELECT" in normalized and "DECKS" in normalized:
+            if "COUNT(C.ID)" in normalized:
                 # Check if it's a single deck query (has 2 params) or list query (has 1 param)
                 if params and len(params) == 2:
                     self._handle_select_deck_with_count(query, params)
@@ -46,11 +63,58 @@ class MockCursor:
                     self._handle_select_decks(query, params)
             else:
                 self._handle_select_decks(query, params)
-        elif "UPDATE decks" in query:
+        elif "SELECT" in normalized and "CARDS" in normalized:
+            self._handle_select_cards(query, params)
+        elif "UPDATE CARDS" in normalized:
+            self._handle_update_card(query, params)
+        elif "UPDATE DECKS" in normalized:
             self._handle_update_deck(query, params)
-        elif "DELETE FROM decks" in query:
+        elif "DELETE FROM CARDS" in normalized:
+            self._handle_delete_card(query, params)
+        elif "DELETE FROM DECKS" in normalized:
             self._handle_delete_deck(query, params)
     
+    def _handle_select_deck_id(self, query: str, params: Optional[List[Any]]) -> None:
+        """Handle SELECT id FROM decks WHERE id = ? AND user_id = ? query."""
+        if params and len(params) == 2:
+            deck_id, user_id = params
+            if deck_id in _test_decks and _test_decks[deck_id]["user_id"] == user_id:
+                self._last_result = [(deck_id,)]
+                self.description = [("id",)]
+                self._rowcount = 1
+            else:
+                self._last_result = []
+                self.description = [("id",)]
+                self._rowcount = 0
+
+    def _handle_select_with_join(self, query: str, params: Optional[List[Any]]) -> None:
+        """Handle SELECT queries with JOINs."""
+        if not params:
+            self._last_result = []
+            return
+
+        if "JOIN decks d ON c.deck_id = d.id" in query:
+            # This is a cards JOIN decks query
+            card_id, user_id = params
+
+            # Check if card exists and belongs to user
+            if card_id in _test_cards:
+                card = _test_cards[card_id]
+                deck_id = card["deck_id"]
+                if deck_id in _test_decks and _test_decks[deck_id]["user_id"] == user_id:
+                    self._last_result = [(card_id,)]
+                    self.description = [("id",)]
+                    self._rowcount = 1
+                else:
+                    self._last_result = []
+                    self._rowcount = 0
+            else:
+                self._last_result = []
+                self._rowcount = 0
+        else:
+            self._last_result = []
+            self._rowcount = 0
+
     def _handle_insert_deck(self, query: str, params: Optional[List[Any]]) -> None:
         """Handle INSERT INTO decks query."""
         if params:
@@ -147,7 +211,139 @@ class MockCursor:
                 self._rowcount = 1
             else:
                 self._rowcount = 0
-    
+
+    def _handle_insert_card(self, query: str, params: Optional[List[Any]]) -> None:
+        """Handle INSERT INTO cards query."""
+        if params:
+            card_id, deck_id, card_type, front_md, back_md, cloze_text_md, cloze_answer, created_at, updated_at = params
+            # Verify deck exists
+            if deck_id not in _test_decks:
+                self._rowcount = 0
+                return
+
+            card = {
+                "id": card_id,
+                "deck_id": deck_id,
+                "card_type": card_type,
+                "front_md": front_md,
+                "back_md": back_md,
+                "cloze_text_md": cloze_text_md,
+                "cloze_answer": cloze_answer,
+                "created_at": created_at,
+                "updated_at": updated_at,
+            }
+            _test_cards[card_id] = card
+            self._last_result = [self._card_to_row(card)]
+            self.description = [
+                ("id",), ("deck_id",), ("card_type",), ("front_md",), ("back_md",),
+                ("cloze_text_md",), ("cloze_answer",), ("created_at",), ("updated_at",)
+            ]
+            self._rowcount = 1
+
+    def _handle_select_cards(self, query: str, params: Optional[List[Any]]) -> None:
+        """Handle SELECT cards query."""
+        if not params:
+            self._last_result = []
+            return
+
+        deck_id = params[0]
+
+        # Verify deck exists
+        if deck_id not in _test_decks:
+            self._last_result = []
+            self.description = [
+                ("id",), ("deck_id",), ("card_type",), ("front_md",), ("back_md",),
+                ("cloze_text_md",), ("cloze_answer",), ("created_at",), ("updated_at",)
+            ]
+            return
+
+        # Filter cards by deck
+        cards = [c for c in _test_cards.values() if c["deck_id"] == deck_id]
+
+        # Apply search filter if present (for ILIKE queries, we get multiple search patterns)
+        # If there are more than 1 param, it's a search query
+        if len(params) > 1:
+            # Search patterns are params[1], params[2], params[3] (front_md, back_md, cloze_text_md)
+            # Extract the search text (remove % wildcards)
+            search_text = params[1].strip('%').lower() if params[1] else ""
+            if search_text:
+                cards = [c for c in cards if (
+                    search_text in c["front_md"].lower() or
+                    (c["back_md"] and search_text in c["back_md"].lower()) or
+                    (c["cloze_text_md"] and search_text in c["cloze_text_md"].lower())
+                )]
+
+        # Sort by created_at DESC
+        cards = sorted(cards, key=lambda x: x["created_at"], reverse=True)
+        self._last_result = [self._card_to_row(c) for c in cards]
+        self.description = [
+            ("id",), ("deck_id",), ("card_type",), ("front_md",), ("back_md",),
+            ("cloze_text_md",), ("cloze_answer",), ("created_at",), ("updated_at",)
+        ]
+
+    def _handle_update_card(self, query: str, params: Optional[List[Any]]) -> None:
+        """Handle UPDATE cards query."""
+        if not params or len(params) < 2:
+            self._rowcount = 0
+            return
+
+        # Last param is always card_id
+        card_id = params[-1]
+
+        if card_id not in _test_cards:
+            self._rowcount = 0
+            return
+
+        # Map updates based on query
+        update_values = params[:-1]
+        idx = 0
+
+        if "front_md =" in query and idx < len(update_values):
+            _test_cards[card_id]["front_md"] = update_values[idx]
+            idx += 1
+        if "back_md =" in query and idx < len(update_values):
+            _test_cards[card_id]["back_md"] = update_values[idx]
+            idx += 1
+        if "cloze_text_md =" in query and idx < len(update_values):
+            _test_cards[card_id]["cloze_text_md"] = update_values[idx]
+            idx += 1
+        if "cloze_answer =" in query and idx < len(update_values):
+            _test_cards[card_id]["cloze_answer"] = update_values[idx]
+            idx += 1
+        if "updated_at =" in query and idx < len(update_values):
+            _test_cards[card_id]["updated_at"] = update_values[idx]
+            idx += 1
+
+        card = _test_cards[card_id]
+        self._last_result = [self._card_to_row(card)]
+        self.description = [
+            ("id",), ("deck_id",), ("card_type",), ("front_md",), ("back_md",),
+            ("cloze_text_md",), ("cloze_answer",), ("created_at",), ("updated_at",)
+        ]
+        self._rowcount = 1
+
+    def _handle_delete_card(self, query: str, params: Optional[List[Any]]) -> None:
+        """Handle DELETE FROM cards query."""
+        if not params or len(params) < 2:
+            self._rowcount = 0
+            return
+
+        card_id = params[0]
+        user_id = params[1]
+
+        # Check if card exists and belongs to user's deck
+        if card_id in _test_cards:
+            card = _test_cards[card_id]
+            deck_id = card["deck_id"]
+            # Verify deck belongs to user
+            if deck_id in _test_decks and _test_decks[deck_id]["user_id"] == user_id:
+                del _test_cards[card_id]
+                self._rowcount = 1
+            else:
+                self._rowcount = 0
+        else:
+            self._rowcount = 0
+
     def fetchone(self) -> Optional[tuple]:
         """Fetch one result."""
         return self._last_result[0] if self._last_result else None
@@ -169,6 +365,13 @@ class MockCursor:
         # psycopg returns the uuid column as a uuid.UUID, so mirror that here.
         return (uuid.UUID(deck["id"]), deck["name"], deck["description"], deck["tags"],
                 deck["created_at"], deck["updated_at"], deck.get("card_count", 0))
+
+    @staticmethod
+    def _card_to_row(card: Dict[str, Any]) -> tuple:
+        """Convert card dict to row tuple."""
+        return (card["id"], card["deck_id"], card["card_type"], card["front_md"],
+                card["back_md"], card["cloze_text_md"], card["cloze_answer"],
+                card["created_at"], card["updated_at"])
 
 
 class MockConnection:
