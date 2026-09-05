@@ -1,9 +1,36 @@
 """Test Card CRUD API endpoints."""
 import uuid
+from datetime import datetime
 
 from fastapi.testclient import TestClient
 
+from app.models import CardResponse
 from tests.conftest import create_test_jwt
+
+
+# ── Response model ─────────────────────────────────────────────────────────
+
+
+def test_card_response_coerces_uuid_ids_to_str() -> None:
+    """Postgres returns id/deck_id as uuid.UUID; CardResponse must coerce them."""
+    card_id = uuid.uuid4()
+    deck_id = uuid.uuid4()
+    now = datetime.utcnow()
+    resp = CardResponse(
+        id=card_id,
+        deck_id=deck_id,
+        card_type="front_back",
+        front_md="Q",
+        back_md="A",
+        cloze_text_md=None,
+        cloze_answer=None,
+        created_at=now,
+        updated_at=now,
+    )
+    assert resp.id == str(card_id)
+    assert resp.deck_id == str(deck_id)
+    assert isinstance(resp.id, str)
+    assert isinstance(resp.deck_id, str)
 
 
 # ── Create Card ────────────────────────────────────────────────────────────
