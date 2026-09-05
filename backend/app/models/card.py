@@ -1,11 +1,13 @@
 """Pydantic models for Card CRUD operations."""
-from typing import List, Optional, Any
+from typing import List, Optional
 from datetime import datetime
 try:
     from typing import Literal
 except ImportError:
     from typing_extensions import Literal  # type: ignore
 from pydantic import BaseModel, Field, model_validator
+
+from app.models.types import UuidStr
 
 
 class CardCreate(BaseModel):
@@ -36,8 +38,8 @@ class CardUpdate(BaseModel):
 
 class CardResponse(BaseModel):
     """Response model for a single card."""
-    id: str
-    deck_id: str
+    id: UuidStr
+    deck_id: UuidStr
     card_type: str
     front_md: str
     back_md: Optional[str]

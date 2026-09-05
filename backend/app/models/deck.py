@@ -1,7 +1,9 @@
 """Pydantic models for Deck CRUD operations."""
 from typing import List, Optional
 from datetime import datetime
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
+
+from app.models.types import UuidStr
 
 
 class DeckCreate(BaseModel):
@@ -20,7 +22,7 @@ class DeckUpdate(BaseModel):
 
 class DeckResponse(BaseModel):
     """Response model for a single deck."""
-    id: str
+    id: UuidStr
     name: str
     description: Optional[str]
     tags: List[str]
@@ -30,13 +32,6 @@ class DeckResponse(BaseModel):
 
     class Config:
         from_attributes = True
-
-    @field_validator("id", mode="before")
-    @classmethod
-    def _coerce_id_to_str(cls, value: object) -> str:
-        # Postgres returns the uuid column as a uuid.UUID; pydantic v2 will not
-        # implicitly coerce that to str, so normalise it here.
-        return str(value)
 
 
 class DeckListResponse(BaseModel):
