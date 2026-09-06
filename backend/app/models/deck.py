@@ -3,6 +3,8 @@ from typing import List, Optional
 from datetime import datetime
 from pydantic import BaseModel, Field
 
+from app.models.types import UuidStr
+
 
 class DeckCreate(BaseModel):
     """Request model for creating a deck."""
@@ -20,7 +22,7 @@ class DeckUpdate(BaseModel):
 
 class DeckResponse(BaseModel):
     """Response model for a single deck."""
-    id: str
+    id: UuidStr
     name: str
     description: Optional[str]
     tags: List[str]

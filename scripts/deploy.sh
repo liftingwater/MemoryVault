@@ -19,8 +19,16 @@ STACK_NAME="${STACK_NAME:-memoryvault}"
 AWS_REGION="${AWS_REGION:-us-east-1}"
 ARTIFACTS_BUCKET="${ARTIFACTS_BUCKET:?ARTIFACTS_BUCKET env var is required}"
 
-LAMBDA_CODE_KEY="lambda/app.zip"
-LAMBDA_LAYER_KEY="lambda/layer.zip"
+# Content-address the artifact keys so a code/dependency change produces a new
+# S3 key. CloudFormation only re-pulls Lambda code / publishes a new layer
+# version when the S3Key *parameter* changes — a fixed key leaves the function
+# running stale code even after we overwrite the object. The layer hash tracks
+# requirements.txt; the app hash tracks the app/ source tree.
+LAYER_HASH="$(shasum -a 256 "${ROOT_DIR}/backend/requirements.txt" | cut -c1-16)"
+APP_HASH="$(cd "${ROOT_DIR}/backend" && find app -type f -not -name '*.pyc' | sort | xargs shasum -a 256 | shasum -a 256 | cut -c1-16)"
+
+LAMBDA_CODE_KEY="lambda/app-${APP_HASH}.zip"
+LAMBDA_LAYER_KEY="lambda/layer-${LAYER_HASH}.zip"
 
 PACKAGED_TEMPLATE="${ROOT_DIR}/packaged-template.yaml"
 

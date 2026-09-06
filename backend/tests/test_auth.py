@@ -5,35 +5,15 @@ from datetime import datetime, timedelta, timezone
 
 import jwt
 import pytest
+from cryptography.hazmat.primitives.asymmetric import ec
 from fastapi.testclient import TestClient
 
 from app.auth import decode_jwt, AuthError
-from app.config import settings
-
-
-def create_test_jwt(user_id: str, email: str = "test@example.com", expired: bool = False) -> str:
-    """Create a valid JWT token for testing."""
-    now = datetime.now(timezone.utc)
-    exp_time = now + (timedelta(hours=-1) if expired else timedelta(hours=1))
-
-    payload = {
-        "sub": user_id,
-        "email": email,
-        "iat": int(now.timestamp()),
-        "exp": int(exp_time.timestamp()),
-        "aud": "authenticated",
-    }
-
-    token = jwt.encode(
-        payload,
-        settings.supabase_jwt_secret,
-        algorithm="HS256",
-    )
-    return token
+from tests.conftest import create_test_jwt
 
 
 def test_auth_decodes_valid_jwt() -> None:
-    """Test that valid JWT tokens are decoded correctly."""
+    """Test that valid ES256 JWT tokens are decoded correctly."""
     user_id = str(uuid.uuid4())
     token = create_test_jwt(user_id)
 
@@ -53,18 +33,31 @@ def test_auth_rejects_expired_token() -> None:
 
 
 def test_auth_rejects_invalid_signature() -> None:
-    """Test that tokens with invalid signatures are rejected."""
-    user_id = str(uuid.uuid4())
-
-    # Create token with wrong secret
+    """Test that a token signed by a different key is rejected."""
+    other_key = ec.generate_private_key(ec.SECP256R1())
     payload = {
-        "sub": user_id,
+        "sub": str(uuid.uuid4()),
         "email": "test@example.com",
         "iat": int(datetime.now(timezone.utc).timestamp()),
         "exp": int((datetime.now(timezone.utc) + timedelta(hours=1)).timestamp()),
+        "aud": "authenticated",
     }
+    token = jwt.encode(payload, other_key, algorithm="ES256")
 
-    token = jwt.encode(payload, "wrong_secret", algorithm="HS256")
+    with pytest.raises(AuthError, match="Invalid"):
+        decode_jwt(token)
+
+
+def test_auth_rejects_non_es256_algorithm() -> None:
+    """Test that non-ES256 tokens (e.g. HS256) are rejected outright."""
+    payload = {
+        "sub": str(uuid.uuid4()),
+        "email": "test@example.com",
+        "iat": int(datetime.now(timezone.utc).timestamp()),
+        "exp": int((datetime.now(timezone.utc) + timedelta(hours=1)).timestamp()),
+        "aud": "authenticated",
+    }
+    token = jwt.encode(payload, "some-shared-secret", algorithm="HS256")
 
     with pytest.raises(AuthError, match="Invalid"):
         decode_jwt(token)
@@ -74,16 +67,16 @@ def test_auth_rejects_invalid_signature() -> None:
 
 
 def test_dashboard_returns_403_without_auth(client: TestClient) -> None:
-    """Test that /dashboard returns 403 when no auth header is provided."""
+    """Test that /api/dashboard returns 403 when no auth header is provided."""
     # HTTPBearer dependency returns 403 for missing credentials, not 401
-    response = client.get("/dashboard")
+    response = client.get("/api/dashboard")
     assert response.status_code == 403
 
 
 def test_dashboard_returns_401_with_invalid_token(client: TestClient) -> None:
-    """Test that /dashboard returns 401 with invalid token."""
+    """Test that /api/dashboard returns 401 with invalid token."""
     response = client.get(
-        "/dashboard",
+        "/api/dashboard",
         headers={"Authorization": "Bearer invalid_token"}
     )
     assert response.status_code == 401
@@ -91,13 +84,13 @@ def test_dashboard_returns_401_with_invalid_token(client: TestClient) -> None:
 
 
 def test_dashboard_returns_200_with_valid_token(client: TestClient) -> None:
-    """Test that /dashboard returns 200 with valid JWT."""
+    """Test that /api/dashboard returns 200 with valid JWT."""
     user_id = str(uuid.uuid4())
     email = "test@example.com"
     token = create_test_jwt(user_id, email)
 
     response = client.get(
-        "/dashboard",
+        "/api/dashboard",
         headers={"Authorization": f"Bearer {token}"}
     )
 
@@ -109,12 +102,12 @@ def test_dashboard_returns_200_with_valid_token(client: TestClient) -> None:
 
 
 def test_dashboard_returns_401_with_expired_token(client: TestClient) -> None:
-    """Test that /dashboard returns 401 with expired token."""
+    """Test that /api/dashboard returns 401 with expired token."""
     user_id = str(uuid.uuid4())
     token = create_test_jwt(user_id, expired=True)
 
     response = client.get(
-        "/dashboard",
+        "/api/dashboard",
         headers={"Authorization": f"Bearer {token}"}
     )
 

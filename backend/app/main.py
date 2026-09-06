@@ -6,12 +6,14 @@ from mangum import Mangum
 
 from app.auth import get_current_user
 from app.config import settings
-from app.routers import decks_router
+from app.routers import decks_router, cards_router
 
 app = FastAPI(title="MemoryVault API")
 
-# Register routers
-app.include_router(decks_router)
+# Register routers under /api so the SPA (served from the same CloudFront
+# domain) keeps ownership of its own client-side routes like /decks/[id].
+app.include_router(decks_router, prefix="/api")
+app.include_router(cards_router, prefix="/api")
 
 app.add_middleware(
     CORSMiddleware,
@@ -26,7 +28,7 @@ def health() -> Dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/dashboard")
+@app.get("/api/dashboard")
 async def dashboard(user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
     """Protected dashboard endpoint. Returns basic user info."""
     return {

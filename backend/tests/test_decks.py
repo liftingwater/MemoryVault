@@ -1,26 +1,30 @@
 """Test Deck CRUD API endpoints."""
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 
-import jwt
-import pytest
 from fastapi.testclient import TestClient
 
-from app.config import settings
+from app.models import DeckResponse
+from tests.conftest import create_test_jwt
 
 
-def create_test_jwt(user_id: str, email: str = "test@example.com") -> str:
-    """Create a valid JWT token for testing."""
-    now = datetime.now(timezone.utc)
-    exp_time = now + timedelta(hours=1)
-    payload = {
-        "sub": user_id,
-        "email": email,
-        "iat": int(now.timestamp()),
-        "exp": int(exp_time.timestamp()),
-        "aud": "authenticated",
-    }
-    return jwt.encode(payload, settings.supabase_jwt_secret, algorithm="HS256")
+# ── Response model ─────────────────────────────────────────────────────────
+
+
+def test_deck_response_coerces_uuid_id_to_str() -> None:
+    """Postgres returns id as uuid.UUID; DeckResponse must coerce it to str."""
+    deck_id = uuid.uuid4()
+    now = datetime.utcnow()
+    resp = DeckResponse(
+        id=deck_id,
+        name="Deck",
+        description=None,
+        tags=[],
+        created_at=now,
+        updated_at=now,
+    )
+    assert resp.id == str(deck_id)
+    assert isinstance(resp.id, str)
 
 
 # ── Create Deck ────────────────────────────────────────────────────────────
@@ -28,7 +32,7 @@ def create_test_jwt(user_id: str, email: str = "test@example.com") -> str:
 
 def test_create_deck_requires_auth(client: TestClient) -> None:
     """Test that creating a deck requires authentication."""
-    response = client.post("/decks", json={"name": "Test Deck"})
+    response = client.post("/api/decks", json={"name": "Test Deck"})
     assert response.status_code == 403
 
 
@@ -38,7 +42,7 @@ def test_create_deck_with_valid_token(client: TestClient) -> None:
     token = create_test_jwt(user_id)
     
     response = client.post(
-        "/decks",
+        "/api/decks",
         json={"name": "My Deck", "description": "Test", "tags": ["learning"]},
         headers={"Authorization": f"Bearer {token}"}
     )
@@ -58,7 +62,7 @@ def test_create_deck_with_minimal_fields(client: TestClient) -> None:
     token = create_test_jwt(user_id)
     
     response = client.post(
-        "/decks",
+        "/api/decks",
         json={"name": "Minimal Deck"},
         headers={"Authorization": f"Bearer {token}"}
     )
@@ -75,7 +79,7 @@ def test_create_deck_with_minimal_fields(client: TestClient) -> None:
 
 def test_list_decks_requires_auth(client: TestClient) -> None:
     """Test that listing decks requires authentication."""
-    response = client.get("/decks")
+    response = client.get("/api/decks")
     assert response.status_code == 403
 
 
@@ -85,7 +89,7 @@ def test_list_decks_empty(client: TestClient) -> None:
     token = create_test_jwt(user_id)
     
     response = client.get(
-        "/decks",
+        "/api/decks",
         headers={"Authorization": f"Bearer {token}"}
     )
     
@@ -104,14 +108,14 @@ def test_list_decks_isolation(client: TestClient) -> None:
     
     # User 1 creates a deck
     client.post(
-        "/decks",
+        "/api/decks",
         json={"name": "User1 Deck"},
         headers={"Authorization": f"Bearer {token1}"}
     )
     
     # User 2 lists their decks - should be empty
     response = client.get(
-        "/decks",
+        "/api/decks",
         headers={"Authorization": f"Bearer {token2}"}
     )
     
@@ -124,7 +128,7 @@ def test_list_decks_isolation(client: TestClient) -> None:
 
 def test_get_deck_requires_auth(client: TestClient) -> None:
     """Test that getting a deck requires authentication."""
-    response = client.get(f"/decks/{uuid.uuid4()}")
+    response = client.get(f"/api/decks/{uuid.uuid4()}")
     assert response.status_code == 403
 
 
@@ -134,7 +138,7 @@ def test_get_deck_not_found(client: TestClient) -> None:
     token = create_test_jwt(user_id)
     
     response = client.get(
-        f"/decks/{uuid.uuid4()}",
+        f"/api/decks/{uuid.uuid4()}",
         headers={"Authorization": f"Bearer {token}"}
     )
     
@@ -150,7 +154,7 @@ def test_get_deck_wrong_owner(client: TestClient) -> None:
     
     # User 1 creates a deck
     create_response = client.post(
-        "/decks",
+        "/api/decks",
         json={"name": "Private Deck"},
         headers={"Authorization": f"Bearer {token1}"}
     )
@@ -158,7 +162,7 @@ def test_get_deck_wrong_owner(client: TestClient) -> None:
     
     # User 2 tries to access it
     response = client.get(
-        f"/decks/{deck_id}",
+        f"/api/decks/{deck_id}",
         headers={"Authorization": f"Bearer {token2}"}
     )
     
@@ -171,7 +175,7 @@ def test_get_deck_wrong_owner(client: TestClient) -> None:
 def test_update_deck_requires_auth(client: TestClient) -> None:
     """Test that updating a deck requires authentication."""
     response = client.put(
-        f"/decks/{uuid.uuid4()}",
+        f"/api/decks/{uuid.uuid4()}",
         json={"name": "Updated"}
     )
     assert response.status_code == 403
@@ -184,7 +188,7 @@ def test_update_deck_success(client: TestClient) -> None:
     
     # Create deck
     create_response = client.post(
-        "/decks",
+        "/api/decks",
         json={"name": "Original", "description": "Original desc"},
         headers={"Authorization": f"Bearer {token}"}
     )
@@ -192,7 +196,7 @@ def test_update_deck_success(client: TestClient) -> None:
     
     # Update it
     response = client.put(
-        f"/decks/{deck_id}",
+        f"/api/decks/{deck_id}",
         json={"name": "Updated", "tags": ["new"]},
         headers={"Authorization": f"Bearer {token}"}
     )
@@ -208,7 +212,7 @@ def test_update_deck_success(client: TestClient) -> None:
 
 def test_delete_deck_requires_auth(client: TestClient) -> None:
     """Test that deleting a deck requires authentication."""
-    response = client.delete(f"/decks/{uuid.uuid4()}")
+    response = client.delete(f"/api/decks/{uuid.uuid4()}")
     assert response.status_code == 403
 
 
@@ -219,7 +223,7 @@ def test_delete_deck_success(client: TestClient) -> None:
     
     # Create deck
     create_response = client.post(
-        "/decks",
+        "/api/decks",
         json={"name": "To Delete"},
         headers={"Authorization": f"Bearer {token}"}
     )
@@ -227,7 +231,7 @@ def test_delete_deck_success(client: TestClient) -> None:
     
     # Delete it
     response = client.delete(
-        f"/decks/{deck_id}",
+        f"/api/decks/{deck_id}",
         headers={"Authorization": f"Bearer {token}"}
     )
     
@@ -235,7 +239,7 @@ def test_delete_deck_success(client: TestClient) -> None:
     
     # Verify it's gone
     get_response = client.get(
-        f"/decks/{deck_id}",
+        f"/api/decks/{deck_id}",
         headers={"Authorization": f"Bearer {token}"}
     )
     assert get_response.status_code == 404
@@ -247,7 +251,7 @@ def test_delete_deck_not_found(client: TestClient) -> None:
     token = create_test_jwt(user_id)
     
     response = client.delete(
-        f"/decks/{uuid.uuid4()}",
+        f"/api/decks/{uuid.uuid4()}",
         headers={"Authorization": f"Bearer {token}"}
     )
     
