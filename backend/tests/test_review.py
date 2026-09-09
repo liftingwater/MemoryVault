@@ -1,11 +1,12 @@
 """Test the FSRS review flow: due retrieval, grading, and streaks."""
 import uuid
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
 
 from app.services.review_service import compute_streak
 from tests.conftest import create_test_jwt
+from tests.test_database import _test_review_logs
 
 
 def _create_deck_and_card(client: TestClient, token: str) -> tuple[str, str]:
@@ -211,6 +212,31 @@ def test_dashboard_reports_cards_due_and_streak(client: TestClient) -> None:
     data = response.json()
     assert data["cards_due"] == 1
     assert data["streak"] == 1
+
+
+def test_grade_card_logs_reviewed_at_in_utc(client: TestClient) -> None:
+    """The review log's reviewed_at is timezone-aware UTC, so streak/day
+    calculations don't drift with the server's local timezone."""
+    token = create_test_jwt(str(uuid.uuid4()))
+    _deck_id, card_id = _create_deck_and_card(client, token)
+
+    response = client.post(
+        f"/api/review/{card_id}",
+        json={"rating": "got_it"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200
+
+    assert len(_test_review_logs) == 1
+    reviewed_at = _test_review_logs[0]["reviewed_at"]
+    assert reviewed_at.tzinfo is not None
+    assert reviewed_at.utcoffset() == timedelta(0)
+    assert reviewed_at.date() == datetime.now(timezone.utc).date()
+
+    dashboard = client.get(
+        "/api/dashboard", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert dashboard.json()["streak"] == 1
 
 
 # ── Streak computation (pure function) ──────────────────────────────────────

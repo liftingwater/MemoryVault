@@ -1,7 +1,7 @@
 """Database service for Card CRUD operations."""
 from typing import List, Optional, Any, Dict
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.database import get_db
 from app.services.fsrs_service import initial_state
@@ -18,7 +18,7 @@ def create_card(
 ) -> Optional[Dict[str, Any]]:
     """Create a new card in a deck."""
     card_id = str(uuid.uuid4())
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     
     with get_db() as conn:
         with conn.cursor() as cur:
@@ -121,7 +121,7 @@ def update_card(
     cloze_answer: Optional[str],
 ) -> Optional[Dict[str, Any]]:
     """Update a card."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     
     with get_db() as conn:
         with conn.cursor() as cur:

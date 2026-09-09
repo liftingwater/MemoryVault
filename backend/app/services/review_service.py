@@ -1,6 +1,6 @@
 """Database service for the review flow (due cards, grading, dashboard)."""
 from typing import Any, Dict, List, Optional
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 import uuid
 
 from app.database import get_db
@@ -38,7 +38,7 @@ def grade_card(user_id: str, card_id: str, rating: str) -> Optional[Dict[str, An
     Returns the updated FSRSState row, or None if the card doesn't exist or
     isn't owned by the user.
     """
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     with get_db() as conn:
         with conn.cursor() as cur:
@@ -131,7 +131,7 @@ def compute_streak(review_days: set, today: Optional[date] = None) -> int:
     if not review_days:
         return 0
     if today is None:
-        today = datetime.utcnow().date()
+        today = datetime.now(timezone.utc).date()
 
     cursor = today if today in review_days else today - timedelta(days=1)
     if cursor not in review_days:
