@@ -244,3 +244,80 @@ export async function deleteCard(
 		throw new Error(await readError(response));
 	}
 }
+
+export type Rating = 'got_it' | 'need_review';
+
+export type FSRSState = {
+	card_id: string;
+	stability: number;
+	difficulty: number;
+	due_date: string;
+	last_review: string | null;
+	reps: number;
+	lapses: number;
+	state: string;
+};
+
+export type Dashboard = {
+	message: string;
+	user_id: string;
+	email: string | null;
+	cards_due: number;
+	streak: number;
+};
+
+export async function getDueCards(
+	token: string,
+	deckId?: string,
+	fetchFn: typeof fetch = fetch
+): Promise<Card[]> {
+	const url = new URL(`${API_BASE_URL}/api/review/due`);
+	if (deckId) {
+		url.searchParams.set('deck_id', deckId);
+	}
+
+	const response = await fetchFn(url.toString(), {
+		headers: authHeaders(token)
+	});
+
+	if (!response.ok) {
+		throw new Error(await readError(response));
+	}
+
+	const body = (await response.json()) as CardListResponse;
+	return body.cards;
+}
+
+export async function gradeCard(
+	token: string,
+	cardId: string,
+	rating: Rating,
+	fetchFn: typeof fetch = fetch
+): Promise<FSRSState> {
+	const response = await fetchFn(`${API_BASE_URL}/api/review/${cardId}`, {
+		method: 'POST',
+		headers: authHeaders(token),
+		body: JSON.stringify({ rating })
+	});
+
+	if (!response.ok) {
+		throw new Error(await readError(response));
+	}
+
+	return (await response.json()) as FSRSState;
+}
+
+export async function getDashboard(
+	token: string,
+	fetchFn: typeof fetch = fetch
+): Promise<Dashboard> {
+	const response = await fetchFn(`${API_BASE_URL}/api/dashboard`, {
+		headers: authHeaders(token)
+	});
+
+	if (!response.ok) {
+		throw new Error(await readError(response));
+	}
+
+	return (await response.json()) as Dashboard;
+}

@@ -4,3 +4,4 @@ uvicorn[standard]==0.22.0
 PyJWT[crypto]
 psycopg[binary]
 boto3
+fsrs==6.3.2

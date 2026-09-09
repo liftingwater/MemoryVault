@@ -5,14 +5,18 @@ import {
 	createDeck,
 	deleteCard,
 	deleteDeck,
+	getDashboard,
 	getDeck,
+	getDueCards,
 	getHealth,
+	gradeCard,
 	listCards,
 	listDecks,
 	updateCard,
 	updateDeck,
 	type Card,
-	type Deck
+	type Deck,
+	type FSRSState
 } from './api';
 
 const sampleDeck: Deck = {
@@ -227,5 +231,84 @@ describe('deleteCard', () => {
 			.mockResolvedValue(Response.json({ detail: 'Card not found' }, { status: 404 }));
 
 		await expect(deleteCard('tok', 'card-1', fetchFn)).rejects.toThrow('Card not found');
+	});
+});
+
+const sampleFsrsState: FSRSState = {
+	card_id: 'card-1',
+	stability: 2.3,
+	difficulty: 5.1,
+	due_date: '2026-01-03',
+	last_review: '2026-01-01',
+	reps: 1,
+	lapses: 0,
+	state: 'review'
+};
+
+describe('getDueCards', () => {
+	it('requests the due queue and returns the array', async () => {
+		const fetchFn = vi.fn().mockResolvedValue(Response.json({ cards: [sampleCard], total: 1 }));
+
+		const result = await getDueCards('tok', undefined, fetchFn);
+
+		expect(fetchFn).toHaveBeenCalledWith(`${API_BASE_URL}/api/review/due`, {
+			headers: { 'Content-Type': 'application/json', Authorization: 'Bearer tok' }
+		});
+		expect(result).toEqual([sampleCard]);
+	});
+
+	it('includes the deck_id query string when provided', async () => {
+		const fetchFn = vi.fn().mockResolvedValue(Response.json({ cards: [], total: 0 }));
+
+		await getDueCards('tok', 'deck-1', fetchFn);
+
+		expect(fetchFn).toHaveBeenCalledWith(`${API_BASE_URL}/api/review/due?deck_id=deck-1`, {
+			headers: { 'Content-Type': 'application/json', Authorization: 'Bearer tok' }
+		});
+	});
+});
+
+describe('gradeCard', () => {
+	it('POSTs the rating and returns the updated FSRS state', async () => {
+		const fetchFn = vi.fn().mockResolvedValue(Response.json(sampleFsrsState));
+
+		const result = await gradeCard('tok', 'card-1', 'got_it', fetchFn);
+
+		expect(fetchFn).toHaveBeenCalledWith(`${API_BASE_URL}/api/review/card-1`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json', Authorization: 'Bearer tok' },
+			body: JSON.stringify({ rating: 'got_it' })
+		});
+		expect(result).toEqual(sampleFsrsState);
+	});
+
+	it('surfaces the backend detail message on error', async () => {
+		const fetchFn = vi
+			.fn()
+			.mockResolvedValue(Response.json({ detail: 'Card not found' }, { status: 404 }));
+
+		await expect(gradeCard('tok', 'card-1', 'need_review', fetchFn)).rejects.toThrow(
+			'Card not found'
+		);
+	});
+});
+
+describe('getDashboard', () => {
+	it('requests the dashboard summary', async () => {
+		const dashboard = {
+			message: 'Welcome to MemoryVault',
+			user_id: 'user-1',
+			email: 'test@example.com',
+			cards_due: 3,
+			streak: 5
+		};
+		const fetchFn = vi.fn().mockResolvedValue(Response.json(dashboard));
+
+		const result = await getDashboard('tok', fetchFn);
+
+		expect(fetchFn).toHaveBeenCalledWith(`${API_BASE_URL}/api/dashboard`, {
+			headers: { 'Content-Type': 'application/json', Authorization: 'Bearer tok' }
+		});
+		expect(result).toEqual(dashboard);
 	});
 });

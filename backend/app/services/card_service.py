@@ -1,9 +1,10 @@
 """Database service for Card CRUD operations."""
 from typing import List, Optional, Any, Dict
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.database import get_db
+from app.services.fsrs_service import initial_state
 
 
 def create_card(
@@ -17,7 +18,7 @@ def create_card(
 ) -> Optional[Dict[str, Any]]:
     """Create a new card in a deck."""
     card_id = str(uuid.uuid4())
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     
     with get_db() as conn:
         with conn.cursor() as cur:
@@ -39,8 +40,25 @@ def create_card(
                 (card_id, deck_id, card_type, front_md, back_md, cloze_text_md, cloze_answer, now, now)
             )
             row = cur.fetchone()
-            if row:
-                return _row_to_dict(row, cur.description)
+            if not row:
+                return None
+            card = _row_to_dict(row, cur.description)
+
+            # Every new card starts out due for review immediately (state=new).
+            fsrs_row = initial_state(now)
+            cur.execute(
+                """
+                INSERT INTO fsrs_states (card_id, stability, difficulty, due_date, last_review, reps, lapses, state)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    card_id, fsrs_row["stability"], fsrs_row["difficulty"],
+                    fsrs_row["due_date"], fsrs_row["last_review"],
+                    fsrs_row["reps"], fsrs_row["lapses"], fsrs_row["state"],
+                )
+            )
+
+            return card
     return None
 
 
@@ -103,7 +121,7 @@ def update_card(
     cloze_answer: Optional[str],
 ) -> Optional[Dict[str, Any]]:
     """Update a card."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     
     with get_db() as conn:
         with conn.cursor() as cur:

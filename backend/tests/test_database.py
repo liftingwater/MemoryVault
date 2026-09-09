@@ -8,13 +8,17 @@ import uuid
 # In-memory storage for test data
 _test_decks: Dict[str, Dict[str, Any]] = {}
 _test_cards: Dict[str, Dict[str, Any]] = {}
+_test_fsrs_states: Dict[str, Dict[str, Any]] = {}
+_test_review_logs: List[Dict[str, Any]] = []
 
 
 def _reset_test_data() -> None:
     """Reset all test data."""
-    global _test_decks, _test_cards
+    global _test_decks, _test_cards, _test_fsrs_states, _test_review_logs
     _test_decks.clear()
     _test_cards.clear()
+    _test_fsrs_states.clear()
+    _test_review_logs.clear()
 
 
 class MockCursor:
@@ -51,6 +55,12 @@ class MockCursor:
             self._handle_insert_deck(query, params)
         elif "INSERT INTO CARDS" in normalized:
             self._handle_insert_card(query, params)
+        elif "INSERT INTO FSRS_STATES" in normalized:
+            self._handle_insert_fsrs_state(query, params)
+        elif "INSERT INTO REVIEW_LOGS" in normalized:
+            self._handle_insert_review_log(query, params)
+        elif "UPDATE FSRS_STATES" in normalized:
+            self._handle_update_fsrs_state(query, params)
         elif "UPDATE CARDS" in normalized:
             self._handle_update_card(query, params)
         elif "UPDATE DECKS" in normalized:
@@ -62,6 +72,18 @@ class MockCursor:
         elif "SELECT ID FROM DECKS" in normalized:
             # Simple ownership check query
             self._handle_select_deck_id(query, params)
+        elif "COUNT(*)" in normalized and "FSRS_STATES" in normalized:
+            # Dashboard due-count query
+            self._handle_select_due_count(query, params)
+        elif "JOIN FSRS_STATES" in normalized:
+            # Due cards list: FROM cards JOIN fsrs_states JOIN decks
+            self._handle_select_due_cards(query, params)
+        elif "FROM FSRS_STATES" in normalized:
+            # Single FSRS state lookup during grading
+            self._handle_select_fsrs_state(query, params)
+        elif "FROM REVIEW_LOGS" in normalized:
+            # Streak computation: distinct review days for the user
+            self._handle_select_review_days(query, params)
         elif "SELECT" in normalized and "JOIN" in normalized:
             # Handle JOIN queries
             self._handle_select_with_join(query, params)
@@ -242,6 +264,140 @@ class MockCursor:
                 ("cloze_text_md",), ("cloze_answer",), ("created_at",), ("updated_at",)
             ]
             self._rowcount = 1
+
+    # ── FSRS / review ────────────────────────────────────────────────────
+
+    _FSRS_STATE_COLUMNS = [
+        ("card_id",), ("stability",), ("difficulty",), ("due_date",),
+        ("last_review",), ("reps",), ("lapses",), ("state",)
+    ]
+
+    def _handle_insert_fsrs_state(self, query: str, params: Optional[List[Any]]) -> None:
+        """Handle INSERT INTO fsrs_states query."""
+        if params:
+            card_id, stability, difficulty, due_date, last_review, reps, lapses, state = params
+            _test_fsrs_states[card_id] = {
+                "card_id": card_id,
+                "stability": stability,
+                "difficulty": difficulty,
+                "due_date": due_date,
+                "last_review": last_review,
+                "reps": reps,
+                "lapses": lapses,
+                "state": state,
+            }
+            self._rowcount = 1
+
+    def _handle_update_fsrs_state(self, query: str, params: Optional[List[Any]]) -> None:
+        """Handle UPDATE fsrs_states query."""
+        if params and len(params) == 8:
+            stability, difficulty, due_date, last_review, reps, lapses, state, card_id = params
+            if card_id in _test_fsrs_states:
+                _test_fsrs_states[card_id].update({
+                    "stability": stability,
+                    "difficulty": difficulty,
+                    "due_date": due_date,
+                    "last_review": last_review,
+                    "reps": reps,
+                    "lapses": lapses,
+                    "state": state,
+                })
+                self._rowcount = 1
+            else:
+                self._rowcount = 0
+
+    def _handle_insert_review_log(self, query: str, params: Optional[List[Any]]) -> None:
+        """Handle INSERT INTO review_logs query."""
+        if params:
+            log_id, card_id, rating, reviewed_at = params
+            _test_review_logs.append({
+                "id": log_id,
+                "card_id": card_id,
+                "rating": rating,
+                "reviewed_at": reviewed_at,
+            })
+            self._rowcount = 1
+
+    def _handle_select_due_count(self, query: str, params: Optional[List[Any]]) -> None:
+        """Handle SELECT COUNT(*) FROM fsrs_states ... query (dashboard)."""
+        if not params:
+            return
+        user_id = params[0]
+        today = datetime.utcnow().date()
+        count = 0
+        for card_id, fsrs in _test_fsrs_states.items():
+            card = _test_cards.get(card_id)
+            deck = _test_decks.get(card["deck_id"]) if card else None
+            if deck and deck["user_id"] == user_id and fsrs["due_date"] <= today:
+                count += 1
+        self._last_result = [(count,)]
+        self.description = [("count",)]
+        self._rowcount = 1
+
+    def _handle_select_due_cards(self, query: str, params: Optional[List[Any]]) -> None:
+        """Handle the due-cards query: cards JOIN fsrs_states JOIN decks."""
+        if not params:
+            self._last_result = []
+            return
+        user_id = params[0]
+        deck_filter = params[1] if len(params) > 1 else None
+        today = datetime.utcnow().date()
+
+        due = []
+        for card_id, fsrs in _test_fsrs_states.items():
+            card = _test_cards.get(card_id)
+            if not card:
+                continue
+            deck = _test_decks.get(card["deck_id"])
+            if not deck or deck["user_id"] != user_id:
+                continue
+            if deck_filter and card["deck_id"] != deck_filter:
+                continue
+            if fsrs["due_date"] <= today:
+                due.append((fsrs["due_date"], card["created_at"], card))
+
+        due.sort(key=lambda t: (t[0], t[1]))
+        self._last_result = [self._card_to_row(c) for _, _, c in due]
+        self.description = [
+            ("id",), ("deck_id",), ("card_type",), ("front_md",), ("back_md",),
+            ("cloze_text_md",), ("cloze_answer",), ("created_at",), ("updated_at",)
+        ]
+
+    def _handle_select_fsrs_state(self, query: str, params: Optional[List[Any]]) -> None:
+        """Handle the single FSRS-state-with-ownership-check lookup used during grading."""
+        self.description = self._FSRS_STATE_COLUMNS
+        if not params or len(params) < 2:
+            self._last_result = []
+            return
+        card_id, user_id = params
+        fsrs = _test_fsrs_states.get(card_id)
+        card = _test_cards.get(card_id)
+        deck = _test_decks.get(card["deck_id"]) if card else None
+        if not fsrs or not deck or deck["user_id"] != user_id:
+            self._last_result = []
+            return
+        self._last_result = [(
+            fsrs["card_id"], fsrs["stability"], fsrs["difficulty"], fsrs["due_date"],
+            fsrs["last_review"], fsrs["reps"], fsrs["lapses"], fsrs["state"],
+        )]
+
+    def _handle_select_review_days(self, query: str, params: Optional[List[Any]]) -> None:
+        """Handle the distinct-review-days query used for streak computation."""
+        self.description = [("day",)]
+        if not params:
+            self._last_result = []
+            return
+        user_id = params[0]
+        days = set()
+        for log in _test_review_logs:
+            card = _test_cards.get(log["card_id"])
+            deck = _test_decks.get(card["deck_id"]) if card else None
+            if not deck or deck["user_id"] != user_id:
+                continue
+            reviewed_at = log["reviewed_at"]
+            day = reviewed_at.date() if isinstance(reviewed_at, datetime) else reviewed_at
+            days.add(day)
+        self._last_result = [(d,) for d in sorted(days, reverse=True)]
 
     def _handle_select_cards(self, query: str, params: Optional[List[Any]]) -> None:
         """Handle SELECT cards query."""
