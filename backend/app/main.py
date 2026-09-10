@@ -6,7 +6,7 @@ from mangum import Mangum
 
 from app.auth import get_current_user
 from app.config import settings
-from app.routers import decks_router, cards_router, review_router
+from app.routers import cards_router, coaching_router, decks_router, review_router
 from app.services import review_service
 
 app = FastAPI(title="MemoryVault API")
@@ -16,6 +16,7 @@ app = FastAPI(title="MemoryVault API")
 app.include_router(decks_router, prefix="/api")
 app.include_router(cards_router, prefix="/api")
 app.include_router(review_router, prefix="/api")
+app.include_router(coaching_router, prefix="/api")
 
 app.add_middleware(
     CORSMiddleware,

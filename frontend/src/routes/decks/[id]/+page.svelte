@@ -9,10 +9,13 @@
 		deleteDeck,
 		getDeck,
 		listCards,
+		listCoachingSessions,
+		startCoachingSession,
 		updateCard,
 		updateDeck,
 		type Card,
 		type CardCreateInput,
+		type CoachingSessionSummary,
 		type Deck
 	} from '$lib/api';
 	import CardEditor from '$lib/CardEditor.svelte';
@@ -39,6 +42,16 @@
 	let creatingCard = $state(false);
 	let editingCardId = $state<string | null>(null);
 	let savingCard = $state(false);
+	let coachingSessions = $state<CoachingSessionSummary[]>([]);
+	let coachingError = $state('');
+	let startingCoaching = $state(false);
+
+	const activeCoachingSession = $derived(
+		coachingSessions.find((session) => session.status === 'active') ?? null
+	);
+	const archivedCoachingSessions = $derived(
+		coachingSessions.filter((session) => session.status === 'archived')
+	);
 
 	function parseTags(value: string): string[] {
 		return value
@@ -67,7 +80,7 @@
 		try {
 			deck = await getDeck(token, deckId);
 			syncForm(deck);
-			await loadCards();
+			await Promise.all([loadCards(), loadCoachingSessions()]);
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to load deck';
 		} finally {
@@ -81,6 +94,32 @@
 			cards = await listCards(token, deckId, search.trim() || undefined);
 		} catch (e) {
 			cardsError = e instanceof Error ? e.message : 'Failed to load cards';
+		}
+	}
+
+	async function loadCoachingSessions() {
+		coachingError = '';
+		try {
+			const response = await listCoachingSessions(token, deckId);
+			coachingSessions = response.sessions;
+		} catch (e) {
+			coachingError = e instanceof Error ? e.message : 'Failed to load coaching sessions';
+		}
+	}
+
+	async function startCoaching() {
+		if (startingCoaching) {
+			return;
+		}
+		coachingError = '';
+		startingCoaching = true;
+		try {
+			const session = await startCoachingSession(token, deckId);
+			goto(`/decks/${deckId}/coaching?session=${encodeURIComponent(session.id)}`);
+		} catch (e) {
+			coachingError = e instanceof Error ? e.message : 'Failed to start coaching session';
+		} finally {
+			startingCoaching = false;
 		}
 	}
 
@@ -204,6 +243,40 @@
 				</button>
 			</form>
 		</section>
+
+			<section>
+				<h2>AI Coaching</h2>
+				{#if coachingError}
+					<p class="error">{coachingError}</p>
+				{/if}
+				<div class="coaching-actions">
+					{#if activeCoachingSession}
+						<a class="action-link" href={`/decks/${deckId}/coaching?session=${activeCoachingSession.id}`}>
+							Continue session
+						</a>
+						<button onclick={startCoaching} disabled={startingCoaching}>
+							{startingCoaching ? 'Starting...' : 'Start new session'}
+						</button>
+					{:else}
+						<button onclick={startCoaching} disabled={startingCoaching}>
+							{startingCoaching ? 'Starting...' : 'Start coaching session'}
+						</button>
+					{/if}
+				</div>
+
+				{#if archivedCoachingSessions.length > 0}
+					<h3>Archived sessions</h3>
+					<ul class="session-list">
+						{#each archivedCoachingSessions as session (session.id)}
+							<li>
+								<a href={`/decks/${deckId}/coaching?session=${session.id}`}>
+									Session from {new Date(session.created_at).toLocaleDateString()}
+								</a>
+							</li>
+						{/each}
+					</ul>
+				{/if}
+			</section>
 
 		<section>
 			<h2>Cards</h2>
@@ -346,6 +419,24 @@
 		gap: 0.5rem;
 		margin-bottom: 1rem;
 	}
+
+		.coaching-actions {
+			display: flex;
+			gap: 0.75rem;
+			align-items: center;
+		}
+
+		.action-link {
+			padding: 0.5rem 1rem;
+			background: #0066cc;
+			color: white;
+			border-radius: 4px;
+			text-decoration: none;
+		}
+
+		.session-list {
+			padding-left: 1.25rem;
+		}
 
 	.search {
 		flex: 1;

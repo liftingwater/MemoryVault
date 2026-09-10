@@ -5,16 +5,24 @@ import {
 	createDeck,
 	deleteCard,
 	deleteDeck,
+	endCoachingSession,
+	getCoachingSession,
 	getDashboard,
 	getDeck,
+	getDeckOutline,
 	getDueCards,
 	getHealth,
 	gradeCard,
 	listCards,
+	listCoachingSessions,
 	listDecks,
+	sendCoachingMessage,
+	startCoachingSession,
 	updateCard,
 	updateDeck,
 	type Card,
+	type CoachingSession,
+	type DeckOutline,
 	type Deck,
 	type FSRSState
 } from './api';
@@ -39,6 +47,31 @@ const sampleCard: Card = {
 	cloze_answer: null,
 	created_at: '2026-01-01T00:00:00Z',
 	updated_at: '2026-01-01T00:00:00Z'
+};
+
+const sampleSession: CoachingSession = {
+	id: 'session-1',
+	deck_id: 'deck-1',
+	status: 'active',
+	created_at: '2026-01-01T00:00:00Z',
+	archived_at: null,
+	messages: []
+};
+
+const sampleMessage = {
+	id: 'message-1',
+	session_id: 'session-1',
+	role: 'user' as const,
+	content: 'I am new to French',
+	created_at: '2026-01-01T00:00:00Z'
+};
+
+const sampleOutline: DeckOutline = {
+	id: 'outline-1',
+	deck_id: 'deck-1',
+	generated_at: '2026-01-01T00:00:00Z',
+	status: 'active',
+	items: []
 };
 
 describe('getHealth', () => {
@@ -310,5 +343,127 @@ describe('getDashboard', () => {
 			headers: { 'Content-Type': 'application/json', Authorization: 'Bearer tok' }
 		});
 		expect(result).toEqual(dashboard);
+	});
+});
+
+describe('coaching API', () => {
+	it('starts a coaching session for a deck', async () => {
+		const fetchFn = vi.fn().mockResolvedValue(
+			Response.json(
+				{
+					session: {
+						id: sampleSession.id,
+						deck_id: sampleSession.deck_id,
+						status: sampleSession.status,
+						created_at: sampleSession.created_at,
+						archived_at: sampleSession.archived_at
+					},
+					assistant_message: sampleMessage
+				},
+				{ status: 201 }
+			)
+		);
+
+		const session = await startCoachingSession('tok', 'deck-1', fetchFn);
+
+		expect(fetchFn).toHaveBeenCalledWith(`${API_BASE_URL}/api/decks/deck-1/coaching/start`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json', Authorization: 'Bearer tok' }
+		});
+		expect(session).toEqual({ ...sampleSession, messages: [sampleMessage] });
+	});
+
+	it('sends a message and returns persisted messages, an outline, and a provider error', async () => {
+		const response = {
+			user_message: sampleMessage,
+			assistant_message: null,
+			outline: sampleOutline,
+			error: { code: 'service_unavailable' as const, message: 'Try again later.' }
+		};
+		const fetchFn = vi.fn().mockResolvedValue(Response.json(response));
+
+		const result = await sendCoachingMessage('tok', 'session-1', 'I am new to French', fetchFn);
+
+		expect(fetchFn).toHaveBeenCalledWith(`${API_BASE_URL}/api/coaching/session-1/message`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json', Authorization: 'Bearer tok' },
+			body: JSON.stringify({ content: 'I am new to French' })
+		});
+		expect(result).toEqual(response);
+	});
+
+	it('lists a deck coaching sessions including archived ones', async () => {
+		const sessions = [
+			{
+				id: sampleSession.id,
+				deck_id: sampleSession.deck_id,
+				status: sampleSession.status,
+				created_at: sampleSession.created_at,
+				archived_at: sampleSession.archived_at
+			}
+		];
+		const fetchFn = vi.fn().mockResolvedValue(Response.json({ sessions, total: 1 }));
+
+		const result = await listCoachingSessions('tok', 'deck-1', fetchFn);
+
+		expect(fetchFn).toHaveBeenCalledWith(`${API_BASE_URL}/api/decks/deck-1/coaching/sessions`, {
+			headers: { 'Content-Type': 'application/json', Authorization: 'Bearer tok' }
+		});
+		expect(result).toEqual({ sessions, total: 1 });
+	});
+
+	it('loads a session, ends it, and reads its deck outline', async () => {
+		const sessionFetch = vi.fn().mockResolvedValue(
+			Response.json({
+				session: {
+					id: sampleSession.id,
+					deck_id: sampleSession.deck_id,
+					status: sampleSession.status,
+					created_at: sampleSession.created_at,
+					archived_at: sampleSession.archived_at
+				},
+				messages: sampleSession.messages
+			})
+		);
+		const endFetch = vi.fn().mockResolvedValue(
+			Response.json({
+				session: {
+					id: sampleSession.id,
+					deck_id: sampleSession.deck_id,
+					status: 'archived',
+					created_at: sampleSession.created_at,
+					archived_at: '2026-01-02T00:00:00Z'
+				},
+				context_saved: false,
+				error: { code: 'timeout', message: 'Timed out' }
+			})
+		);
+		const outlineFetch = vi.fn().mockResolvedValue(Response.json({ outline: sampleOutline }));
+
+		await expect(getCoachingSession('tok', 'session-1', sessionFetch)).resolves.toEqual(sampleSession);
+		await expect(endCoachingSession('tok', 'session-1', endFetch)).resolves.toMatchObject({
+			context_saved: false,
+			error: { message: 'Timed out' }
+		});
+		await expect(getDeckOutline('tok', 'deck-1', outlineFetch)).resolves.toEqual(sampleOutline);
+
+		expect(sessionFetch).toHaveBeenCalledWith(`${API_BASE_URL}/api/coaching/session-1`, {
+			headers: { 'Content-Type': 'application/json', Authorization: 'Bearer tok' }
+		});
+		expect(endFetch).toHaveBeenCalledWith(`${API_BASE_URL}/api/coaching/session-1/end`, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json', Authorization: 'Bearer tok' }
+		});
+		expect(outlineFetch).toHaveBeenCalledWith(`${API_BASE_URL}/api/decks/deck-1/outline`, {
+			headers: { 'Content-Type': 'application/json', Authorization: 'Bearer tok' }
+		});
+	});
+
+	it('surfaces backend errors from coaching requests', async () => {
+		const fetchFn = vi
+			.fn()
+			.mockResolvedValue(Response.json({ detail: 'Session not found' }, { status: 404 }));
+
+		await expect(getCoachingSession('tok', 'missing', fetchFn)).rejects.toThrow('Session not found');
 	});
 });

@@ -10,6 +10,10 @@ _test_decks: Dict[str, Dict[str, Any]] = {}
 _test_cards: Dict[str, Dict[str, Any]] = {}
 _test_fsrs_states: Dict[str, Dict[str, Any]] = {}
 _test_review_logs: List[Dict[str, Any]] = []
+_test_coaching_sessions: Dict[str, Dict[str, Any]] = {}
+_test_coaching_messages: List[Dict[str, Any]] = []
+_test_deck_outlines: Dict[str, Dict[str, Any]] = {}
+_test_outline_items: Dict[str, Dict[str, Any]] = {}
 
 
 def _reset_test_data() -> None:
@@ -19,15 +23,19 @@ def _reset_test_data() -> None:
     _test_cards.clear()
     _test_fsrs_states.clear()
     _test_review_logs.clear()
+    _test_coaching_sessions.clear()
+    _test_coaching_messages.clear()
+    _test_deck_outlines.clear()
+    _test_outline_items.clear()
 
 
 class MockCursor:
     """Mock psycopg cursor for testing."""
 
     def __init__(self) -> None:
-        self.description: Optional[List[tuple]] = None
+        self.description: Optional[List[tuple[Any, ...]]] = None
         self._rowcount = 0
-        self._last_result: Optional[List[tuple]] = None
+        self._last_result: Optional[List[tuple[Any, ...]]] = None
 
     @property
     def rowcount(self) -> int:
@@ -51,7 +59,27 @@ class MockCursor:
         # Dispatch write operations first: their queries may embed a SELECT
         # subquery (e.g. DELETE ... IN (SELECT id FROM decks ...)) that would
         # otherwise be mis-matched by the SELECT branches below.
-        if "INSERT INTO DECKS" in normalized:
+        if "INSERT INTO COACHING_SESSIONS" in normalized:
+            self._handle_insert_coaching_session(params)
+        elif "INSERT INTO COACHING_MESSAGES" in normalized:
+            self._handle_insert_coaching_message(params)
+        elif "INSERT INTO DECK_OUTLINES" in normalized:
+            self._handle_insert_deck_outline(params)
+        elif "INSERT INTO OUTLINE_ITEMS" in normalized:
+            self._handle_insert_outline_item(params)
+        elif "UPDATE COACHING_SESSIONS" in normalized:
+            self._handle_update_coaching_sessions(query, params)
+        elif "UPDATE DECK_OUTLINES" in normalized:
+            self._handle_archive_deck_outlines(params)
+        elif "FROM COACHING_MESSAGES" in normalized:
+            self._handle_select_coaching_messages(normalized, params)
+        elif "FROM COACHING_SESSIONS" in normalized:
+            self._handle_select_coaching_sessions(normalized, params)
+        elif "FROM DECK_OUTLINES" in normalized:
+            self._handle_select_deck_outlines(params)
+        elif "FROM OUTLINE_ITEMS" in normalized:
+            self._handle_select_outline_items(params)
+        elif "INSERT INTO DECKS" in normalized:
             self._handle_insert_deck(query, params)
         elif "INSERT INTO CARDS" in normalized:
             self._handle_insert_card(query, params)
@@ -98,6 +126,131 @@ class MockCursor:
                 self._handle_select_decks(query, params)
         elif "SELECT" in normalized and "CARDS" in normalized:
             self._handle_select_cards(query, params)
+
+    _COACHING_SESSION_COLUMNS: List[tuple[Any, ...]] = [
+        ("id",), ("deck_id",), ("status",), ("created_at",), ("archived_at",)
+    ]
+    _COACHING_MESSAGE_COLUMNS: List[tuple[Any, ...]] = [
+        ("id",), ("session_id",), ("role",), ("content",), ("created_at",)
+    ]
+
+    def _handle_insert_coaching_session(self, params: Optional[List[Any]]) -> None:
+        if not params:
+            return
+        session_id, deck_id, session_status, created_at, archived_at = params
+        session = {"id": session_id, "deck_id": deck_id, "status": session_status,
+                   "created_at": created_at, "archived_at": archived_at}
+        _test_coaching_sessions[session_id] = session
+        self._last_result = [self._coaching_session_to_row(session)]
+        self.description = self._COACHING_SESSION_COLUMNS
+        self._rowcount = 1
+
+    def _handle_insert_coaching_message(self, params: Optional[List[Any]]) -> None:
+        if not params:
+            return
+        message_id, session_id, role, content, created_at = params
+        message = {"id": message_id, "session_id": session_id, "role": role,
+                   "content": content, "created_at": created_at}
+        _test_coaching_messages.append(message)
+        self._last_result = [self._coaching_message_to_row(message)]
+        self.description = self._COACHING_MESSAGE_COLUMNS
+        self._rowcount = 1
+
+    def _handle_update_coaching_sessions(self, query: str, params: Optional[List[Any]]) -> None:
+        if not params:
+            return
+        archived_at, identifier = params
+        if "WHERE DECK_ID" in query.upper():
+            sessions = [session for session in _test_coaching_sessions.values()
+                        if session["deck_id"] == identifier and session["status"] == "active"]
+        else:
+            session = _test_coaching_sessions.get(identifier)
+            sessions = [session] if session and session["status"] == "active" else []
+        for session in sessions:
+            session["status"] = "archived"
+            session["archived_at"] = archived_at
+        self._rowcount = len(sessions)
+        if "RETURNING" in query.upper() and sessions:
+            self._last_result = [self._coaching_session_to_row(sessions[0])]
+            self.description = self._COACHING_SESSION_COLUMNS
+
+    def _handle_select_coaching_sessions(self, query: str, params: Optional[List[Any]]) -> None:
+        self.description = self._COACHING_SESSION_COLUMNS
+        if not params:
+            self._last_result = []
+            return
+        sessions: List[Dict[str, Any]]
+        if "JOIN DECKS" in query:
+            session_id, user_id = params
+            session = _test_coaching_sessions.get(session_id)
+            if session is None:
+                sessions = []
+            else:
+                deck = _test_decks.get(session["deck_id"])
+                sessions = [session] if deck and deck["user_id"] == user_id else []
+        elif "WHERE ID" in query:
+            session = _test_coaching_sessions.get(params[0])
+            sessions = [session] if session else []
+        else:
+            sessions = [session for session in _test_coaching_sessions.values()
+                        if session["deck_id"] == params[0]]
+            sessions.sort(key=lambda value: value["created_at"], reverse=True)
+        self._last_result = [self._coaching_session_to_row(session) for session in sessions]
+
+    def _handle_select_coaching_messages(self, query: str, params: Optional[List[Any]]) -> None:
+        messages = [message for message in _test_coaching_messages
+                    if params and message["session_id"] == params[0]]
+        messages.sort(key=lambda value: (value["created_at"], value["id"]))
+        if "SELECT ROLE, CONTENT" in query:
+            self._last_result = [(message["role"], message["content"]) for message in messages]
+            self.description = [("role",), ("content",)]
+        else:
+            self._last_result = [self._coaching_message_to_row(message) for message in messages]
+            self.description = self._COACHING_MESSAGE_COLUMNS
+
+    def _handle_insert_deck_outline(self, params: Optional[List[Any]]) -> None:
+        if not params:
+            return
+        outline_id, deck_id, generated_at, outline_status = params
+        outline = {"id": outline_id, "deck_id": deck_id, "generated_at": generated_at,
+                   "status": outline_status}
+        _test_deck_outlines[outline_id] = outline
+        self._last_result = [self._deck_outline_to_row(outline)]
+        self.description = [("id",), ("deck_id",), ("generated_at",), ("status",)]
+        self._rowcount = 1
+
+    def _handle_archive_deck_outlines(self, params: Optional[List[Any]]) -> None:
+        for outline in _test_deck_outlines.values():
+            if params and outline["deck_id"] == params[0] and outline["status"] == "active":
+                outline["status"] = "archived"
+
+    def _handle_insert_outline_item(self, params: Optional[List[Any]]) -> None:
+        if not params:
+            return
+        item_id, outline_id, section, title, description, position, card_id = params
+        item = {"id": item_id, "outline_id": outline_id, "section": section,
+                "title": title, "description": description, "position": position,
+                "card_id": card_id}
+        _test_outline_items[item_id] = item
+        self._last_result = [self._outline_item_to_row(item)]
+        self.description = [("id",), ("outline_id",), ("section",), ("title",),
+                            ("description",), ("position",), ("card_id",)]
+        self._rowcount = 1
+
+    def _handle_select_deck_outlines(self, params: Optional[List[Any]]) -> None:
+        outlines = [outline for outline in _test_deck_outlines.values() if params
+                    and outline["deck_id"] == params[0] and outline["status"] == "active"]
+        outlines.sort(key=lambda value: value["generated_at"], reverse=True)
+        self._last_result = [self._deck_outline_to_row(outline) for outline in outlines[:1]]
+        self.description = [("id",), ("deck_id",), ("generated_at",), ("status",)]
+
+    def _handle_select_outline_items(self, params: Optional[List[Any]]) -> None:
+        items = [item for item in _test_outline_items.values() if params
+                 and item["outline_id"] == params[0]]
+        items.sort(key=lambda value: value["position"])
+        self._last_result = [self._outline_item_to_row(item) for item in items]
+        self.description = [("id",), ("outline_id",), ("section",), ("title",),
+                            ("description",), ("position",), ("card_id",)]
     
     def _handle_select_deck_id(self, query: str, params: Optional[List[Any]]) -> None:
         """Handle SELECT id FROM decks WHERE id = ? AND user_id = ? query."""
@@ -267,7 +420,7 @@ class MockCursor:
 
     # ── FSRS / review ────────────────────────────────────────────────────
 
-    _FSRS_STATE_COLUMNS = [
+    _FSRS_STATE_COLUMNS: List[tuple[Any, ...]] = [
         ("card_id",), ("stability",), ("difficulty",), ("due_date",),
         ("last_review",), ("reps",), ("lapses",), ("state",)
     ]
@@ -503,34 +656,54 @@ class MockCursor:
         else:
             self._rowcount = 0
 
-    def fetchone(self) -> Optional[tuple]:
+    def fetchone(self) -> Optional[tuple[Any, ...]]:
         """Fetch one result."""
         return self._last_result[0] if self._last_result else None
     
-    def fetchall(self) -> List[tuple]:
+    def fetchall(self) -> List[tuple[Any, ...]]:
         """Fetch all results."""
         return self._last_result or []
     
     @staticmethod
-    def _deck_to_row(deck: Dict[str, Any]) -> tuple:
+    def _deck_to_row(deck: Dict[str, Any]) -> tuple[Any, ...]:
         """Convert deck dict to row tuple."""
         # psycopg returns the uuid column as a uuid.UUID, so mirror that here.
         return (uuid.UUID(deck["id"]), deck["name"], deck["description"], deck["tags"],
                 deck["created_at"], deck["updated_at"])
 
     @staticmethod
-    def _deck_to_row_with_count(deck: Dict[str, Any]) -> tuple:
+    def _deck_to_row_with_count(deck: Dict[str, Any]) -> tuple[Any, ...]:
         """Convert deck dict to row tuple with card count."""
         # psycopg returns the uuid column as a uuid.UUID, so mirror that here.
         return (uuid.UUID(deck["id"]), deck["name"], deck["description"], deck["tags"],
                 deck["created_at"], deck["updated_at"], deck.get("card_count", 0))
 
     @staticmethod
-    def _card_to_row(card: Dict[str, Any]) -> tuple:
+    def _card_to_row(card: Dict[str, Any]) -> tuple[Any, ...]:
         """Convert card dict to row tuple."""
         return (card["id"], card["deck_id"], card["card_type"], card["front_md"],
                 card["back_md"], card["cloze_text_md"], card["cloze_answer"],
                 card["created_at"], card["updated_at"])
+
+    @staticmethod
+    def _coaching_session_to_row(session: Dict[str, Any]) -> tuple[Any, ...]:
+        return (session["id"], session["deck_id"], session["status"],
+                session["created_at"], session["archived_at"])
+
+    @staticmethod
+    def _coaching_message_to_row(message: Dict[str, Any]) -> tuple[Any, ...]:
+        return (message["id"], message["session_id"], message["role"],
+                message["content"], message["created_at"])
+
+    @staticmethod
+    def _deck_outline_to_row(outline: Dict[str, Any]) -> tuple[Any, ...]:
+        return (outline["id"], outline["deck_id"], outline["generated_at"],
+                outline["status"])
+
+    @staticmethod
+    def _outline_item_to_row(item: Dict[str, Any]) -> tuple[Any, ...]:
+        return (item["id"], item["outline_id"], item["section"], item["title"],
+                item["description"], item["position"], item["card_id"])
 
 
 class MockConnection:
