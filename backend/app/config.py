@@ -48,6 +48,10 @@ class Settings:
     supabase_url: str
     supabase_anon_key: str
     supabase_db_url: str
+    bedrock_model_id: str
+    bedrock_region: str
+    use_mock_ai: bool
+    context_bucket: str
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -61,6 +65,14 @@ class Settings:
             supabase_url=os.environ.get("SUPABASE_URL", ""),
             supabase_anon_key=os.environ.get("VITE_SUPABASE_ANON_KEY", ""),
             supabase_db_url=secrets.get("db_url", ""),
+            bedrock_model_id=os.environ.get(
+                "BEDROCK_MODEL_ID", "anthropic.claude-3-haiku-20240307-v1:0"
+            ),
+            bedrock_region=os.environ.get(
+                "BEDROCK_REGION", os.environ.get("AWS_REGION", "us-east-1")
+            ),
+            use_mock_ai=os.environ.get("USE_MOCK_AI", "false").lower() == "true",
+            context_bucket=os.environ.get("CONTEXT_BUCKET", ""),
         )
 
 

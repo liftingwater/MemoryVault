@@ -16,8 +16,10 @@ def get_connection() -> psycopg.Connection:
     """
     if not settings.supabase_db_url:
         raise RuntimeError("SUPABASE_DB_URL not configured")
-    
-    return psycopg.connect(settings.supabase_db_url)
+
+    # Pin the session to UTC so CURRENT_DATE / timestamptz casts line up with
+    # the UTC datetimes the app writes (review due-dates, streaks, timestamps).
+    return psycopg.connect(settings.supabase_db_url, options="-c timezone=UTC")
 
 
 @contextmanager

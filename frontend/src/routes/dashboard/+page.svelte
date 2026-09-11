@@ -3,12 +3,13 @@
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import type { User } from '@supabase/supabase-js';
-	import { createDeck, listDecks, type Deck } from '$lib/api';
+	import { createDeck, getDashboard, listDecks, type Dashboard, type Deck } from '$lib/api';
 
 	let user: User | null = $state(null);
 	let token = $state('');
 	let loading = $state(true);
 	let decks = $state<Deck[]>([]);
+	let dashboard = $state<Dashboard | null>(null);
 	let error = $state('');
 
 	let name = $state('');
@@ -32,6 +33,14 @@
 		}
 	}
 
+	async function loadDashboard() {
+		try {
+			dashboard = await getDashboard(token);
+		} catch (e) {
+			error = e instanceof Error ? e.message : 'Failed to load dashboard';
+		}
+	}
+
 	onMount(async () => {
 		const {
 			data: { session }
@@ -44,7 +53,7 @@
 
 		user = session.user;
 		token = session.access_token;
-		await loadDecks();
+		await Promise.all([loadDecks(), loadDashboard()]);
 		loading = false;
 	});
 
@@ -87,6 +96,22 @@
 
 		{#if error}
 			<p class="error">{error}</p>
+		{/if}
+
+		{#if dashboard}
+			<section class="review-summary">
+				<div>
+					<p class="stat">{dashboard.cards_due}</p>
+					<p class="label">cards due</p>
+				</div>
+				<div>
+					<p class="stat">{dashboard.streak}</p>
+					<p class="label">day streak</p>
+				</div>
+				{#if dashboard.cards_due > 0}
+					<a class="review-btn" href="/review">Start Review</a>
+				{/if}
+			</section>
 		{/if}
 
 		<section>
@@ -207,6 +232,33 @@
 
 	.error {
 		color: #cc0000;
+	}
+
+	.review-summary {
+		display: flex;
+		align-items: center;
+		gap: 2rem;
+	}
+
+	.review-summary .stat {
+		font-size: 2rem;
+		font-weight: bold;
+		margin: 0;
+	}
+
+	.review-summary .label {
+		margin: 0;
+		color: #666;
+		font-size: 0.85rem;
+	}
+
+	.review-btn {
+		margin-left: auto;
+		padding: 0.5rem 1rem;
+		background: #0066cc;
+		color: white;
+		border-radius: 4px;
+		text-decoration: none;
 	}
 
 	button {

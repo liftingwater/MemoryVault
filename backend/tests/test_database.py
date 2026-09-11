@@ -8,22 +8,34 @@ import uuid
 # In-memory storage for test data
 _test_decks: Dict[str, Dict[str, Any]] = {}
 _test_cards: Dict[str, Dict[str, Any]] = {}
+_test_fsrs_states: Dict[str, Dict[str, Any]] = {}
+_test_review_logs: List[Dict[str, Any]] = []
+_test_coaching_sessions: Dict[str, Dict[str, Any]] = {}
+_test_coaching_messages: List[Dict[str, Any]] = []
+_test_deck_outlines: Dict[str, Dict[str, Any]] = {}
+_test_outline_items: Dict[str, Dict[str, Any]] = {}
 
 
 def _reset_test_data() -> None:
     """Reset all test data."""
-    global _test_decks, _test_cards
+    global _test_decks, _test_cards, _test_fsrs_states, _test_review_logs
     _test_decks.clear()
     _test_cards.clear()
+    _test_fsrs_states.clear()
+    _test_review_logs.clear()
+    _test_coaching_sessions.clear()
+    _test_coaching_messages.clear()
+    _test_deck_outlines.clear()
+    _test_outline_items.clear()
 
 
 class MockCursor:
     """Mock psycopg cursor for testing."""
 
     def __init__(self) -> None:
-        self.description: Optional[List[tuple]] = None
+        self.description: Optional[List[tuple[Any, ...]]] = None
         self._rowcount = 0
-        self._last_result: Optional[List[tuple]] = None
+        self._last_result: Optional[List[tuple[Any, ...]]] = None
 
     @property
     def rowcount(self) -> int:
@@ -47,10 +59,36 @@ class MockCursor:
         # Dispatch write operations first: their queries may embed a SELECT
         # subquery (e.g. DELETE ... IN (SELECT id FROM decks ...)) that would
         # otherwise be mis-matched by the SELECT branches below.
-        if "INSERT INTO DECKS" in normalized:
+        if "INSERT INTO COACHING_SESSIONS" in normalized:
+            self._handle_insert_coaching_session(params)
+        elif "INSERT INTO COACHING_MESSAGES" in normalized:
+            self._handle_insert_coaching_message(params)
+        elif "INSERT INTO DECK_OUTLINES" in normalized:
+            self._handle_insert_deck_outline(params)
+        elif "INSERT INTO OUTLINE_ITEMS" in normalized:
+            self._handle_insert_outline_item(params)
+        elif "UPDATE COACHING_SESSIONS" in normalized:
+            self._handle_update_coaching_sessions(query, params)
+        elif "UPDATE DECK_OUTLINES" in normalized:
+            self._handle_archive_deck_outlines(params)
+        elif "FROM COACHING_MESSAGES" in normalized:
+            self._handle_select_coaching_messages(normalized, params)
+        elif "FROM COACHING_SESSIONS" in normalized:
+            self._handle_select_coaching_sessions(normalized, params)
+        elif "FROM DECK_OUTLINES" in normalized:
+            self._handle_select_deck_outlines(params)
+        elif "FROM OUTLINE_ITEMS" in normalized:
+            self._handle_select_outline_items(params)
+        elif "INSERT INTO DECKS" in normalized:
             self._handle_insert_deck(query, params)
         elif "INSERT INTO CARDS" in normalized:
             self._handle_insert_card(query, params)
+        elif "INSERT INTO FSRS_STATES" in normalized:
+            self._handle_insert_fsrs_state(query, params)
+        elif "INSERT INTO REVIEW_LOGS" in normalized:
+            self._handle_insert_review_log(query, params)
+        elif "UPDATE FSRS_STATES" in normalized:
+            self._handle_update_fsrs_state(query, params)
         elif "UPDATE CARDS" in normalized:
             self._handle_update_card(query, params)
         elif "UPDATE DECKS" in normalized:
@@ -62,6 +100,18 @@ class MockCursor:
         elif "SELECT ID FROM DECKS" in normalized:
             # Simple ownership check query
             self._handle_select_deck_id(query, params)
+        elif "COUNT(*)" in normalized and "FSRS_STATES" in normalized:
+            # Dashboard due-count query
+            self._handle_select_due_count(query, params)
+        elif "JOIN FSRS_STATES" in normalized:
+            # Due cards list: FROM cards JOIN fsrs_states JOIN decks
+            self._handle_select_due_cards(query, params)
+        elif "FROM FSRS_STATES" in normalized:
+            # Single FSRS state lookup during grading
+            self._handle_select_fsrs_state(query, params)
+        elif "FROM REVIEW_LOGS" in normalized:
+            # Streak computation: distinct review days for the user
+            self._handle_select_review_days(query, params)
         elif "SELECT" in normalized and "JOIN" in normalized:
             # Handle JOIN queries
             self._handle_select_with_join(query, params)
@@ -76,6 +126,131 @@ class MockCursor:
                 self._handle_select_decks(query, params)
         elif "SELECT" in normalized and "CARDS" in normalized:
             self._handle_select_cards(query, params)
+
+    _COACHING_SESSION_COLUMNS: List[tuple[Any, ...]] = [
+        ("id",), ("deck_id",), ("status",), ("created_at",), ("archived_at",)
+    ]
+    _COACHING_MESSAGE_COLUMNS: List[tuple[Any, ...]] = [
+        ("id",), ("session_id",), ("role",), ("content",), ("created_at",)
+    ]
+
+    def _handle_insert_coaching_session(self, params: Optional[List[Any]]) -> None:
+        if not params:
+            return
+        session_id, deck_id, session_status, created_at, archived_at = params
+        session = {"id": session_id, "deck_id": deck_id, "status": session_status,
+                   "created_at": created_at, "archived_at": archived_at}
+        _test_coaching_sessions[session_id] = session
+        self._last_result = [self._coaching_session_to_row(session)]
+        self.description = self._COACHING_SESSION_COLUMNS
+        self._rowcount = 1
+
+    def _handle_insert_coaching_message(self, params: Optional[List[Any]]) -> None:
+        if not params:
+            return
+        message_id, session_id, role, content, created_at = params
+        message = {"id": message_id, "session_id": session_id, "role": role,
+                   "content": content, "created_at": created_at}
+        _test_coaching_messages.append(message)
+        self._last_result = [self._coaching_message_to_row(message)]
+        self.description = self._COACHING_MESSAGE_COLUMNS
+        self._rowcount = 1
+
+    def _handle_update_coaching_sessions(self, query: str, params: Optional[List[Any]]) -> None:
+        if not params:
+            return
+        archived_at, identifier = params
+        if "WHERE DECK_ID" in query.upper():
+            sessions = [session for session in _test_coaching_sessions.values()
+                        if session["deck_id"] == identifier and session["status"] == "active"]
+        else:
+            session = _test_coaching_sessions.get(identifier)
+            sessions = [session] if session and session["status"] == "active" else []
+        for session in sessions:
+            session["status"] = "archived"
+            session["archived_at"] = archived_at
+        self._rowcount = len(sessions)
+        if "RETURNING" in query.upper() and sessions:
+            self._last_result = [self._coaching_session_to_row(sessions[0])]
+            self.description = self._COACHING_SESSION_COLUMNS
+
+    def _handle_select_coaching_sessions(self, query: str, params: Optional[List[Any]]) -> None:
+        self.description = self._COACHING_SESSION_COLUMNS
+        if not params:
+            self._last_result = []
+            return
+        sessions: List[Dict[str, Any]]
+        if "JOIN DECKS" in query:
+            session_id, user_id = params
+            session = _test_coaching_sessions.get(session_id)
+            if session is None:
+                sessions = []
+            else:
+                deck = _test_decks.get(session["deck_id"])
+                sessions = [session] if deck and deck["user_id"] == user_id else []
+        elif "WHERE ID" in query:
+            session = _test_coaching_sessions.get(params[0])
+            sessions = [session] if session else []
+        else:
+            sessions = [session for session in _test_coaching_sessions.values()
+                        if session["deck_id"] == params[0]]
+            sessions.sort(key=lambda value: value["created_at"], reverse=True)
+        self._last_result = [self._coaching_session_to_row(session) for session in sessions]
+
+    def _handle_select_coaching_messages(self, query: str, params: Optional[List[Any]]) -> None:
+        messages = [message for message in _test_coaching_messages
+                    if params and message["session_id"] == params[0]]
+        messages.sort(key=lambda value: (value["created_at"], value["id"]))
+        if "SELECT ROLE, CONTENT" in query:
+            self._last_result = [(message["role"], message["content"]) for message in messages]
+            self.description = [("role",), ("content",)]
+        else:
+            self._last_result = [self._coaching_message_to_row(message) for message in messages]
+            self.description = self._COACHING_MESSAGE_COLUMNS
+
+    def _handle_insert_deck_outline(self, params: Optional[List[Any]]) -> None:
+        if not params:
+            return
+        outline_id, deck_id, generated_at, outline_status = params
+        outline = {"id": outline_id, "deck_id": deck_id, "generated_at": generated_at,
+                   "status": outline_status}
+        _test_deck_outlines[outline_id] = outline
+        self._last_result = [self._deck_outline_to_row(outline)]
+        self.description = [("id",), ("deck_id",), ("generated_at",), ("status",)]
+        self._rowcount = 1
+
+    def _handle_archive_deck_outlines(self, params: Optional[List[Any]]) -> None:
+        for outline in _test_deck_outlines.values():
+            if params and outline["deck_id"] == params[0] and outline["status"] == "active":
+                outline["status"] = "archived"
+
+    def _handle_insert_outline_item(self, params: Optional[List[Any]]) -> None:
+        if not params:
+            return
+        item_id, outline_id, section, title, description, position, card_id = params
+        item = {"id": item_id, "outline_id": outline_id, "section": section,
+                "title": title, "description": description, "position": position,
+                "card_id": card_id}
+        _test_outline_items[item_id] = item
+        self._last_result = [self._outline_item_to_row(item)]
+        self.description = [("id",), ("outline_id",), ("section",), ("title",),
+                            ("description",), ("position",), ("card_id",)]
+        self._rowcount = 1
+
+    def _handle_select_deck_outlines(self, params: Optional[List[Any]]) -> None:
+        outlines = [outline for outline in _test_deck_outlines.values() if params
+                    and outline["deck_id"] == params[0] and outline["status"] == "active"]
+        outlines.sort(key=lambda value: value["generated_at"], reverse=True)
+        self._last_result = [self._deck_outline_to_row(outline) for outline in outlines[:1]]
+        self.description = [("id",), ("deck_id",), ("generated_at",), ("status",)]
+
+    def _handle_select_outline_items(self, params: Optional[List[Any]]) -> None:
+        items = [item for item in _test_outline_items.values() if params
+                 and item["outline_id"] == params[0]]
+        items.sort(key=lambda value: value["position"])
+        self._last_result = [self._outline_item_to_row(item) for item in items]
+        self.description = [("id",), ("outline_id",), ("section",), ("title",),
+                            ("description",), ("position",), ("card_id",)]
     
     def _handle_select_deck_id(self, query: str, params: Optional[List[Any]]) -> None:
         """Handle SELECT id FROM decks WHERE id = ? AND user_id = ? query."""
@@ -243,6 +418,140 @@ class MockCursor:
             ]
             self._rowcount = 1
 
+    # ── FSRS / review ────────────────────────────────────────────────────
+
+    _FSRS_STATE_COLUMNS: List[tuple[Any, ...]] = [
+        ("card_id",), ("stability",), ("difficulty",), ("due_date",),
+        ("last_review",), ("reps",), ("lapses",), ("state",)
+    ]
+
+    def _handle_insert_fsrs_state(self, query: str, params: Optional[List[Any]]) -> None:
+        """Handle INSERT INTO fsrs_states query."""
+        if params:
+            card_id, stability, difficulty, due_date, last_review, reps, lapses, state = params
+            _test_fsrs_states[card_id] = {
+                "card_id": card_id,
+                "stability": stability,
+                "difficulty": difficulty,
+                "due_date": due_date,
+                "last_review": last_review,
+                "reps": reps,
+                "lapses": lapses,
+                "state": state,
+            }
+            self._rowcount = 1
+
+    def _handle_update_fsrs_state(self, query: str, params: Optional[List[Any]]) -> None:
+        """Handle UPDATE fsrs_states query."""
+        if params and len(params) == 8:
+            stability, difficulty, due_date, last_review, reps, lapses, state, card_id = params
+            if card_id in _test_fsrs_states:
+                _test_fsrs_states[card_id].update({
+                    "stability": stability,
+                    "difficulty": difficulty,
+                    "due_date": due_date,
+                    "last_review": last_review,
+                    "reps": reps,
+                    "lapses": lapses,
+                    "state": state,
+                })
+                self._rowcount = 1
+            else:
+                self._rowcount = 0
+
+    def _handle_insert_review_log(self, query: str, params: Optional[List[Any]]) -> None:
+        """Handle INSERT INTO review_logs query."""
+        if params:
+            log_id, card_id, rating, reviewed_at = params
+            _test_review_logs.append({
+                "id": log_id,
+                "card_id": card_id,
+                "rating": rating,
+                "reviewed_at": reviewed_at,
+            })
+            self._rowcount = 1
+
+    def _handle_select_due_count(self, query: str, params: Optional[List[Any]]) -> None:
+        """Handle SELECT COUNT(*) FROM fsrs_states ... query (dashboard)."""
+        if not params:
+            return
+        user_id = params[0]
+        today = datetime.utcnow().date()
+        count = 0
+        for card_id, fsrs in _test_fsrs_states.items():
+            card = _test_cards.get(card_id)
+            deck = _test_decks.get(card["deck_id"]) if card else None
+            if deck and deck["user_id"] == user_id and fsrs["due_date"] <= today:
+                count += 1
+        self._last_result = [(count,)]
+        self.description = [("count",)]
+        self._rowcount = 1
+
+    def _handle_select_due_cards(self, query: str, params: Optional[List[Any]]) -> None:
+        """Handle the due-cards query: cards JOIN fsrs_states JOIN decks."""
+        if not params:
+            self._last_result = []
+            return
+        user_id = params[0]
+        deck_filter = params[1] if len(params) > 1 else None
+        today = datetime.utcnow().date()
+
+        due = []
+        for card_id, fsrs in _test_fsrs_states.items():
+            card = _test_cards.get(card_id)
+            if not card:
+                continue
+            deck = _test_decks.get(card["deck_id"])
+            if not deck or deck["user_id"] != user_id:
+                continue
+            if deck_filter and card["deck_id"] != deck_filter:
+                continue
+            if fsrs["due_date"] <= today:
+                due.append((fsrs["due_date"], card["created_at"], card))
+
+        due.sort(key=lambda t: (t[0], t[1]))
+        self._last_result = [self._card_to_row(c) for _, _, c in due]
+        self.description = [
+            ("id",), ("deck_id",), ("card_type",), ("front_md",), ("back_md",),
+            ("cloze_text_md",), ("cloze_answer",), ("created_at",), ("updated_at",)
+        ]
+
+    def _handle_select_fsrs_state(self, query: str, params: Optional[List[Any]]) -> None:
+        """Handle the single FSRS-state-with-ownership-check lookup used during grading."""
+        self.description = self._FSRS_STATE_COLUMNS
+        if not params or len(params) < 2:
+            self._last_result = []
+            return
+        card_id, user_id = params
+        fsrs = _test_fsrs_states.get(card_id)
+        card = _test_cards.get(card_id)
+        deck = _test_decks.get(card["deck_id"]) if card else None
+        if not fsrs or not deck or deck["user_id"] != user_id:
+            self._last_result = []
+            return
+        self._last_result = [(
+            fsrs["card_id"], fsrs["stability"], fsrs["difficulty"], fsrs["due_date"],
+            fsrs["last_review"], fsrs["reps"], fsrs["lapses"], fsrs["state"],
+        )]
+
+    def _handle_select_review_days(self, query: str, params: Optional[List[Any]]) -> None:
+        """Handle the distinct-review-days query used for streak computation."""
+        self.description = [("day",)]
+        if not params:
+            self._last_result = []
+            return
+        user_id = params[0]
+        days = set()
+        for log in _test_review_logs:
+            card = _test_cards.get(log["card_id"])
+            deck = _test_decks.get(card["deck_id"]) if card else None
+            if not deck or deck["user_id"] != user_id:
+                continue
+            reviewed_at = log["reviewed_at"]
+            day = reviewed_at.date() if isinstance(reviewed_at, datetime) else reviewed_at
+            days.add(day)
+        self._last_result = [(d,) for d in sorted(days, reverse=True)]
+
     def _handle_select_cards(self, query: str, params: Optional[List[Any]]) -> None:
         """Handle SELECT cards query."""
         if not params:
@@ -347,34 +656,54 @@ class MockCursor:
         else:
             self._rowcount = 0
 
-    def fetchone(self) -> Optional[tuple]:
+    def fetchone(self) -> Optional[tuple[Any, ...]]:
         """Fetch one result."""
         return self._last_result[0] if self._last_result else None
     
-    def fetchall(self) -> List[tuple]:
+    def fetchall(self) -> List[tuple[Any, ...]]:
         """Fetch all results."""
         return self._last_result or []
     
     @staticmethod
-    def _deck_to_row(deck: Dict[str, Any]) -> tuple:
+    def _deck_to_row(deck: Dict[str, Any]) -> tuple[Any, ...]:
         """Convert deck dict to row tuple."""
         # psycopg returns the uuid column as a uuid.UUID, so mirror that here.
         return (uuid.UUID(deck["id"]), deck["name"], deck["description"], deck["tags"],
                 deck["created_at"], deck["updated_at"])
 
     @staticmethod
-    def _deck_to_row_with_count(deck: Dict[str, Any]) -> tuple:
+    def _deck_to_row_with_count(deck: Dict[str, Any]) -> tuple[Any, ...]:
         """Convert deck dict to row tuple with card count."""
         # psycopg returns the uuid column as a uuid.UUID, so mirror that here.
         return (uuid.UUID(deck["id"]), deck["name"], deck["description"], deck["tags"],
                 deck["created_at"], deck["updated_at"], deck.get("card_count", 0))
 
     @staticmethod
-    def _card_to_row(card: Dict[str, Any]) -> tuple:
+    def _card_to_row(card: Dict[str, Any]) -> tuple[Any, ...]:
         """Convert card dict to row tuple."""
         return (card["id"], card["deck_id"], card["card_type"], card["front_md"],
                 card["back_md"], card["cloze_text_md"], card["cloze_answer"],
                 card["created_at"], card["updated_at"])
+
+    @staticmethod
+    def _coaching_session_to_row(session: Dict[str, Any]) -> tuple[Any, ...]:
+        return (session["id"], session["deck_id"], session["status"],
+                session["created_at"], session["archived_at"])
+
+    @staticmethod
+    def _coaching_message_to_row(message: Dict[str, Any]) -> tuple[Any, ...]:
+        return (message["id"], message["session_id"], message["role"],
+                message["content"], message["created_at"])
+
+    @staticmethod
+    def _deck_outline_to_row(outline: Dict[str, Any]) -> tuple[Any, ...]:
+        return (outline["id"], outline["deck_id"], outline["generated_at"],
+                outline["status"])
+
+    @staticmethod
+    def _outline_item_to_row(item: Dict[str, Any]) -> tuple[Any, ...]:
+        return (item["id"], item["outline_id"], item["section"], item["title"],
+                item["description"], item["position"], item["card_id"])
 
 
 class MockConnection:

@@ -244,3 +244,263 @@ export async function deleteCard(
 		throw new Error(await readError(response));
 	}
 }
+
+export type Rating = 'got_it' | 'need_review';
+
+export type FSRSState = {
+	card_id: string;
+	stability: number;
+	difficulty: number;
+	due_date: string;
+	last_review: string | null;
+	reps: number;
+	lapses: number;
+	state: string;
+};
+
+export type Dashboard = {
+	message: string;
+	user_id: string;
+	email: string | null;
+	cards_due: number;
+	streak: number;
+};
+
+export async function getDueCards(
+	token: string,
+	deckId?: string,
+	fetchFn: typeof fetch = fetch
+): Promise<Card[]> {
+	const url = new URL(`${API_BASE_URL}/api/review/due`);
+	if (deckId) {
+		url.searchParams.set('deck_id', deckId);
+	}
+
+	const response = await fetchFn(url.toString(), {
+		headers: authHeaders(token)
+	});
+
+	if (!response.ok) {
+		throw new Error(await readError(response));
+	}
+
+	const body = (await response.json()) as CardListResponse;
+	return body.cards;
+}
+
+export async function gradeCard(
+	token: string,
+	cardId: string,
+	rating: Rating,
+	fetchFn: typeof fetch = fetch
+): Promise<FSRSState> {
+	const response = await fetchFn(`${API_BASE_URL}/api/review/${cardId}`, {
+		method: 'POST',
+		headers: authHeaders(token),
+		body: JSON.stringify({ rating })
+	});
+
+	if (!response.ok) {
+		throw new Error(await readError(response));
+	}
+
+	return (await response.json()) as FSRSState;
+}
+
+export async function getDashboard(
+	token: string,
+	fetchFn: typeof fetch = fetch
+): Promise<Dashboard> {
+	const response = await fetchFn(`${API_BASE_URL}/api/dashboard`, {
+		headers: authHeaders(token)
+	});
+
+	if (!response.ok) {
+		throw new Error(await readError(response));
+	}
+
+	return (await response.json()) as Dashboard;
+}
+
+export type CoachingSessionStatus = 'active' | 'archived';
+export type CoachingMessageRole = 'user' | 'assistant';
+export type CoachingErrorCode =
+	| 'timeout'
+	| 'throttled'
+	| 'service_unavailable'
+	| 'context_store_unavailable';
+
+export type CoachingError = {
+	code: CoachingErrorCode;
+	message: string;
+};
+
+export type CoachingMessage = {
+	id: string;
+	session_id: string;
+	role: CoachingMessageRole;
+	content: string;
+	created_at: string;
+};
+
+export type CoachingSessionSummary = {
+	id: string;
+	deck_id: string;
+	status: CoachingSessionStatus;
+	created_at: string;
+	archived_at: string | null;
+};
+
+export type CoachingSession = CoachingSessionSummary & {
+	messages: CoachingMessage[];
+};
+
+type CoachingStartResponse = {
+	session: CoachingSessionSummary;
+	assistant_message: CoachingMessage;
+};
+
+type CoachingSessionDetailResponse = {
+	session: CoachingSessionSummary;
+	messages: CoachingMessage[];
+};
+
+export type CoachingSessionListResponse = {
+	sessions: CoachingSessionSummary[];
+	total: number;
+};
+
+export type OutlineItem = {
+	id: string;
+	outline_id: string;
+	section: string;
+	title: string;
+	description: string | null;
+	position: number;
+	card_id: string | null;
+};
+
+export type DeckOutline = {
+	id: string;
+	deck_id: string;
+	generated_at: string;
+	status: 'active' | 'archived';
+	items: OutlineItem[];
+};
+
+export type CoachingMessageResponse = {
+	user_message: CoachingMessage;
+	assistant_message: CoachingMessage | null;
+	outline: DeckOutline | null;
+	error: CoachingError | null;
+};
+
+export type EndCoachingSessionResponse = {
+	session: CoachingSessionSummary;
+	context_saved: boolean;
+	error: CoachingError | null;
+};
+
+export async function startCoachingSession(
+	token: string,
+	deckId: string,
+	fetchFn: typeof fetch = fetch
+): Promise<CoachingSession> {
+	const response = await fetchFn(`${API_BASE_URL}/api/decks/${deckId}/coaching/start`, {
+		method: 'POST',
+		headers: authHeaders(token)
+	});
+
+	if (!response.ok) {
+		throw new Error(await readError(response));
+	}
+
+	const body = (await response.json()) as CoachingStartResponse;
+	return { ...body.session, messages: [body.assistant_message] };
+}
+
+export async function sendCoachingMessage(
+	token: string,
+	sessionId: string,
+	content: string,
+	fetchFn: typeof fetch = fetch
+): Promise<CoachingMessageResponse> {
+	const response = await fetchFn(`${API_BASE_URL}/api/coaching/${sessionId}/message`, {
+		method: 'POST',
+		headers: authHeaders(token),
+		body: JSON.stringify({ content })
+	});
+
+	if (!response.ok) {
+		throw new Error(await readError(response));
+	}
+
+	return (await response.json()) as CoachingMessageResponse;
+}
+
+export async function listCoachingSessions(
+	token: string,
+	deckId: string,
+	fetchFn: typeof fetch = fetch
+): Promise<CoachingSessionListResponse> {
+	const response = await fetchFn(`${API_BASE_URL}/api/decks/${deckId}/coaching/sessions`, {
+		headers: authHeaders(token)
+	});
+
+	if (!response.ok) {
+		throw new Error(await readError(response));
+	}
+
+	return (await response.json()) as CoachingSessionListResponse;
+}
+
+export async function getCoachingSession(
+	token: string,
+	sessionId: string,
+	fetchFn: typeof fetch = fetch
+): Promise<CoachingSession> {
+	const response = await fetchFn(`${API_BASE_URL}/api/coaching/${sessionId}`, {
+		headers: authHeaders(token)
+	});
+
+	if (!response.ok) {
+		throw new Error(await readError(response));
+	}
+
+	const body = (await response.json()) as CoachingSessionDetailResponse;
+	return { ...body.session, messages: body.messages };
+}
+
+export async function endCoachingSession(
+	token: string,
+	sessionId: string,
+	fetchFn: typeof fetch = fetch
+): Promise<EndCoachingSessionResponse> {
+	const response = await fetchFn(`${API_BASE_URL}/api/coaching/${sessionId}/end`, {
+		method: 'POST',
+		headers: authHeaders(token)
+	});
+
+	if (!response.ok) {
+		throw new Error(await readError(response));
+	}
+
+	return (await response.json()) as EndCoachingSessionResponse;
+}
+
+export async function getDeckOutline(
+	token: string,
+	deckId: string,
+	fetchFn: typeof fetch = fetch
+): Promise<DeckOutline | null> {
+	const response = await fetchFn(`${API_BASE_URL}/api/decks/${deckId}/outline`, {
+		headers: authHeaders(token)
+	});
+
+	if (!response.ok) {
+		throw new Error(await readError(response));
+	}
+
+	const body = (await response.json()) as { outline: DeckOutline | null };
+	return body.outline;
+}
