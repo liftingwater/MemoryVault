@@ -50,12 +50,44 @@ def test_bedrock_ai_coach_returns_claude_text_response() -> None:
     assert request["modelId"] == "anthropic.claude-3-haiku-20240307-v1:0"
     assert request["contentType"] == "application/json"
     assert request["accept"] == "application/json"
-    assert json.loads(request["body"]) == {
-        "anthropic_version": "bedrock-2023-05-31",
-        "max_tokens": 1024,
-        "system": "Deck context: {\"goal\": \"Learn Python fundamentals\"}",
-        "messages": [{"role": "user", "content": "Where should I start?"}],
+    body = json.loads(request["body"])
+    assert body["anthropic_version"] == "bedrock-2023-05-31"
+    assert body["max_tokens"] == 1024
+    assert "Never write flashcard front or back content" in body["system"]
+    assert body["system"].endswith('Deck context: {"goal": "Learn Python fundamentals"}')
+    assert body["messages"] == [{"role": "user", "content": "Where should I start?"}]
+
+
+def test_bedrock_ai_coach_parses_a_structured_outline_response() -> None:
+    client = MagicMock()
+    client.invoke_model.return_value = {
+        "body": io.BytesIO(json.dumps({"content": [{"type": "text", "text": json.dumps({
+            "message": "This is a good scope.",
+            "outline": {"items": [{"section": "Basics", "title": "Variables"}]},
+        })}]}).encode())
     }
+
+    response = BedrockAICoach(model_id="test-model", client=client).generate_response([], {})
+
+    assert response.content == "This is a good scope."
+    assert response.outline is not None
+    assert response.outline.items[0].title == "Variables"
+
+
+def test_bedrock_ai_coach_generates_a_structured_deck_context() -> None:
+    client = MagicMock()
+    client.invoke_model.return_value = {
+        "body": io.BytesIO(json.dumps({"content": [{"type": "text", "text": json.dumps({
+            "goals": ["Build APIs"], "proficiency": "beginner",
+        })}]}).encode())
+    }
+
+    response = BedrockAICoach(model_id="test-model", client=client).generate_context([], {})
+
+    assert response.context == {"goals": ["Build APIs"], "proficiency": "beginner"}
+    assert response.error is None
+    request = json.loads(client.invoke_model.call_args.kwargs["body"])
+    assert "persistent deck memory" in request["system"]
 
 
 @pytest.mark.parametrize(

@@ -2,5 +2,6 @@
 from app.routers.decks import router as decks_router
 from app.routers.cards import router as cards_router
 from app.routers.review import router as review_router
+from app.routers.coaching import router as coaching_router
 
-__all__ = ["decks_router", "cards_router", "review_router"]
+__all__ = ["decks_router", "cards_router", "review_router", "coaching_router"]

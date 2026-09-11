@@ -51,6 +51,7 @@ class Settings:
     bedrock_model_id: str
     bedrock_region: str
     use_mock_ai: bool
+    context_bucket: str
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -71,6 +72,7 @@ class Settings:
                 "BEDROCK_REGION", os.environ.get("AWS_REGION", "us-east-1")
             ),
             use_mock_ai=os.environ.get("USE_MOCK_AI", "false").lower() == "true",
+            context_bucket=os.environ.get("CONTEXT_BUCKET", ""),
         )
 
 
